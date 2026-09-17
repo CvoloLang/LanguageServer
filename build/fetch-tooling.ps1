@@ -159,6 +159,7 @@ function Write-NativeProps {
         "    <CvoloToolingVersion>$toolingVersion</CvoloToolingVersion>`n" +
         "    <CvoloToolingDir>`$(MSBuildThisFileDirectory)tooling/$toolingVersion</CvoloToolingDir>`n" +
         "    <CompilerCompatLine>0.0</CompilerCompatLine>`n" +
+        "    <CvoloManagedToolingAvailable>false</CvoloManagedToolingAvailable>`n" +
         "  </PropertyGroup>`n</Project>`n"
     [System.IO.File]::WriteAllText($propsFile, $content, [System.Text.UTF8Encoding]::new($false))
 }
@@ -269,7 +270,7 @@ try {
         (-not (Test-Path -LiteralPath $tempSums) -or
         -not (Test-Path -LiteralPath $tempManifest) -or
         -not (Test-Path -LiteralPath $tempDll))) {
-        throw "Downloaded bundle is missing required files (native tooling or manifest/checksums/tooling dll)"
+        throw "Downloaded bundle is missing required files (native tooling or manifest/checksums/Cvolo.Compiler.Tooling.dll)"
     }
     if (-not $nativeTooling -and -not (Test-Checksums $bundleRoot $tempSums)) {
         throw "Downloaded bundle failed SHA256 checksum verification"

@@ -1,4 +1,6 @@
+#if CVOLO_MANAGED_TOOLING
 using Cvolo.Compiler.Tooling;
+#endif
 using Cvolo.LanguageServer.Logging;
 using Cvolo.LanguageServer.Protocol;
 using Newtonsoft.Json;
@@ -80,6 +82,7 @@ internal static class ServerPipeline
 
     private static bool TryLoadTooling(ILspLogger logger)
     {
+#if CVOLO_MANAGED_TOOLING
         try
         {
             string path = Path.Combine(AppContext.BaseDirectory, "Cvolo.Compiler.Tooling.dll");
@@ -111,5 +114,9 @@ internal static class ServerPipeline
             logger.Error($"Failed to load Cvolo.Compiler.Tooling: {ex.Message}");
             return false;
         }
+#else
+        logger.Warning("Cvolo.Compiler.Tooling.dll is unavailable; compiler-backed language features are disabled.");
+        return true;
+#endif
     }
 }

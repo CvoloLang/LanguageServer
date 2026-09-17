@@ -10,6 +10,11 @@
   <Import Project="$(MSBuildThisFileDirectory)..\..\artifacts\tooling-dir.props"
           Condition="Exists('$(MSBuildThisFileDirectory)..\..\artifacts\tooling-dir.props')" />
 
+  <PropertyGroup>
+    <CvoloManagedToolingAvailable Condition="'$(CvoloToolingDir)' != '' and Exists('$(CvoloToolingDir)/Cvolo.Compiler.Tooling.dll')">true</CvoloManagedToolingAvailable>
+    <CvoloManagedToolingAvailable Condition="'$(CvoloManagedToolingAvailable)' == ''">false</CvoloManagedToolingAvailable>
+  </PropertyGroup>
+
   <Target Name="EnsureToolingRestored"
           BeforeTargets="ResolveReferences"
           Condition="'$(CvoloToolingDir)' == ''">
@@ -20,11 +25,19 @@
     <ProjectReference Include="..\Cvolo.LanguageServer.Core\Cvolo.LanguageServer.Core.csproj" />
   </ItemGroup>
 
-  <ItemGroup Condition="'$(CvoloToolingDir)' != ''">
+  <ItemGroup Condition="'$(CvoloManagedToolingAvailable)' == 'true'">
     <Reference Include="Cvolo.Compiler.Tooling">
       <HintPath>$(CvoloToolingDir)/Cvolo.Compiler.Tooling.dll</HintPath>
       <Private>true</Private>
     </Reference>
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(CvoloManagedToolingAvailable)' != 'true'">
+    <Compile Remove="CvoloLanguageBackend.cs" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(CvoloManagedToolingAvailable)' == 'true'">
+    <Compile Remove="CvoloLanguageBackend.Disabled.cs" />
   </ItemGroup>
 
 </Project>

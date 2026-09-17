@@ -56,9 +56,9 @@ internal sealed class SessionState
     {
         get
         {
-            if (_initializeParams?.RootUri is { } rootUri)
+            if (_initializeParams?.RootUri is { } rootUri && TryGetLocalPath(rootUri, out string? localPath))
             {
-                return rootUri.LocalPath;
+                return localPath;
             }
 
             return _initializeParams?.RootPath;
@@ -85,9 +85,26 @@ internal sealed class SessionState
     {
         if (uriText is not null
             && Uri.TryCreate(uriText, UriKind.Absolute, out Uri? parsed)
-            && string.Equals(parsed.Scheme, Uri.UriSchemeFile, StringComparison.OrdinalIgnoreCase))
+            && TryGetLocalPath(parsed, out localPath))
         {
-            localPath = parsed.LocalPath;
+            return true;
+        }
+
+        localPath = null;
+        return false;
+    }
+
+    private static bool TryGetLocalPath(Uri uri, [NotNullWhen(true)] out string? localPath)
+    {
+        if (uri.IsAbsoluteUri && string.Equals(uri.Scheme, Uri.UriSchemeFile, StringComparison.OrdinalIgnoreCase))
+        {
+            localPath = uri.LocalPath;
+            return true;
+        }
+
+        if (!uri.IsAbsoluteUri && Path.IsPathRooted(uri.OriginalString))
+        {
+            localPath = Path.GetFullPath(uri.OriginalString);
             return true;
         }
 

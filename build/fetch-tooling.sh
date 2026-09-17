@@ -157,6 +157,7 @@ write_native_props() {
         echo "    <CvoloToolingVersion>$TOOLING_VERSION</CvoloToolingVersion>"
         echo "    <CvoloToolingDir>\$(MSBuildThisFileDirectory)tooling/$TOOLING_VERSION</CvoloToolingDir>"
         echo "    <CompilerCompatLine>0.0</CompilerCompatLine>"
+        echo "    <CvoloManagedToolingAvailable>false</CvoloManagedToolingAvailable>"
         echo "  </PropertyGroup>"
         echo "</Project>"
     } > "$PROPS_FILE"
@@ -256,7 +257,7 @@ if verify_native_tooling "$TEMP_EXTRACT"; then
 fi
 
 if [ "$NATIVE_TOOLING" -ne 1 ] && { [ ! -f "$TEMP_SUMS" ] || [ ! -f "$TEMP_MANIFEST" ] || [ ! -f "$TEMP_DLL" ]; }; then
-    err "Downloaded bundle is missing required files (native tooling or manifest/checksums/tooling dll)"
+    err "Downloaded bundle is missing required files (native tooling or manifest/checksums/Cvolo.Compiler.Tooling.dll)"
     rm -f "$TEMP_ZIP"; rm -rf "$TEMP_EXTRACT"
     exit 1
 fi
