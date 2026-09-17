@@ -14,9 +14,15 @@ internal sealed class LanguageServer(TerminationRequest termination, ILspLogger 
 {
     private readonly SessionState _state = new();
     private readonly CancellationTokenSource _sessionCancellation = new();
+    private TextDocumentSyncHandler? _sync;
     private Timer? _deadClientExitTimer;
 
-    public InitializeResponse Initialize(InitializeParams? initializeParams)
+    /// <summary>
+    /// Text document synchronization (didOpen/didChange/didClose) handler.
+    /// </summary>
+    internal TextDocumentSyncHandler Sync => _sync ??= new TextDocumentSyncHandler(logger, () => _state.WorkspaceFolders, () => _state.WorkspaceRoot);
+
+    public InitializeResponse Initialize(InitializeRequestParams? initializeParams)
     {
         if (initializeParams is null)
         {
@@ -79,7 +85,14 @@ internal sealed class LanguageServer(TerminationRequest termination, ILspLogger 
         logger.Info("Client initialized.");
 
         return new InitializeResponse(
-            new ServerCapabilities { TextDocumentSync = null },
+            new ServerCapabilities
+            {
+                TextDocumentSync = new TextDocumentSyncOptions
+                {
+                    OpenClose = true,
+                    Change = TextDocumentSyncKind.Incremental,
+                },
+            },
             new ServerInfo(ServerMetadata.ServerName, ServerMetadata.ServerVersion));
     }
 
@@ -163,6 +176,8 @@ internal sealed class LanguageServer(TerminationRequest termination, ILspLogger 
         _sessionCancellation.Dispose();
     }
 
-    private static LocalRpcException ServerNotInitialized(string message) =>
-        new(message) { ErrorCode = (int)ProtocolErrorCodes.ServerNotInitialized };
+    private static LocalRpcException ServerNotInitialized(string message)
+    {
+        return new(message) { ErrorCode = ProtocolErrorCodes.ServerNotInitialized };
+    }
 }

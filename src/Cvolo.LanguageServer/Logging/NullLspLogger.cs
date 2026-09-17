@@ -7,7 +7,15 @@ public sealed class NullLspLogger : ILspLogger
 
     public TextWriter? RawSink => null;
 
+    public void Debug(string message)
+    {
+    }
+
     public void Info(string message)
+    {
+    }
+
+    public void Warning(string message)
     {
     }
 

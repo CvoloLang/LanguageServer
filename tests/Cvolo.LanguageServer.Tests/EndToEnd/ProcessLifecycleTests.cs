@@ -59,6 +59,8 @@ public class ProcessLifecycleTests
         JObject initialize = await server.WaitForResponseAsync(1).WithTimeout("initialize response");
         Assert.Equal("cvolo-language-server", initialize["result"]!["serverInfo"]!["name"]!.Value<string>());
         Assert.NotNull(initialize["result"]!["capabilities"]);
+        Assert.True(initialize["result"]!["capabilities"]!["textDocumentSync"]!["openClose"]!.Value<bool>());
+        Assert.Equal(2, initialize["result"]!["capabilities"]!["textDocumentSync"]!["change"]!.Value<int>());
 
         server.SendJson(JsonRpcFrames.Notification("initialized", "{}"));
         server.SendJson(JsonRpcFrames.Request(2, "shutdown", "null"));
@@ -68,6 +70,35 @@ public class ProcessLifecycleTests
         server.SendJson(JsonRpcFrames.Notification("exit", "null"));
         var exitCode = await server.WaitForExitAsync().WithTimeout("server exit");
         Assert.Equal(0, exitCode);
+    }
+
+    [Fact]
+    public async Task EndToEnd_DocumentSync_OpenChangeClose_ExitsCleanly()
+    {
+        using var workspace = TestWorkspace.CreateProject(["main.cvl"]);
+        using var server = ServerProcess.Start("--stdio");
+
+        server.SendJson(JsonRpcFrames.Request(1, "initialize", $"{{\"processId\":{Environment.ProcessId},\"workspaceFolders\":[{{\"uri\":\"{UriEscape(workspace.DirectoryPath)}\",\"name\":\"w\"}}]}}"));
+        await server.WaitForResponseAsync(1).WithTimeout("initialize response");
+
+        string uri = new Uri(Path.Combine(workspace.DirectoryPath, "main.cvl")).AbsoluteUri;
+        string document = $"{{\"uri\":\"{uri}\",\"languageId\":\"cvolo\",\"version\":1,\"text\":\"int Main() {{ return 0; }}\"}}";
+
+        server.SendJson(JsonRpcFrames.Notification("textDocument/didOpen", $"{{\"textDocument\":{document}}}"));
+        server.SendJson(JsonRpcFrames.Notification("textDocument/didChange", $"{{\"textDocument\":{{\"uri\":\"{uri}\",\"version\":2}},\"contentChanges\":[{{\"range\":{{\"start\":{{\"line\":0,\"character\":12}},\"end\":{{\"line\":0,\"character\":12}}}},\"text\":\" // edited\"}}]}}"));
+        server.SendJson(JsonRpcFrames.Notification("textDocument/didClose", $"{{\"textDocument\":{{\"uri\":\"{uri}\"}}}}"));
+        server.SendJson(JsonRpcFrames.Notification("initialized", "{}"));
+        server.SendJson(JsonRpcFrames.Request(2, "shutdown", "null"));
+        await server.WaitForResponseAsync(2).WithTimeout("shutdown response");
+        server.SendJson(JsonRpcFrames.Notification("exit", "null"));
+
+        var exitCode = await server.WaitForExitAsync().WithTimeout("server exit");
+        Assert.Equal(0, exitCode);
+    }
+
+    private static string UriEscape(string path)
+    {
+        return new Uri(path).AbsoluteUri;
     }
 
     [Fact]

@@ -1,8 +1,11 @@
+using Cvolo.Compiler.Tooling;
 using Cvolo.LanguageServer.Logging;
 using Cvolo.LanguageServer.Protocol;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Serialization;
 using StreamJsonRpc;
+using System.Reflection;
+using System.Runtime.Loader;
 
 namespace Cvolo.LanguageServer.Cli;
 
@@ -20,6 +23,11 @@ internal static class ServerPipeline
         Console.Error.WriteLine($"tooling {ServerMetadata.ToolingVersion}");
         Console.Error.WriteLine($"compiler-line {ServerMetadata.CompilerCompatibilityLine}");
         logger.Info($"{ServerMetadata.ServerName} {ServerMetadata.ServerVersion} starting");
+
+        if (!TryLoadTooling(logger))
+        {
+            return 1;
+        }
 
         TerminationRequest termination = new();
         using IClientProcessWatcher clientWatcher = ClientProcessWatcherFactory.Create();
@@ -39,6 +47,11 @@ internal static class ServerPipeline
         using HeaderDelimitedMessageHandler handler = new(stdout, stdin, formatter);
         JsonRpc rpc = new(handler);
         rpc.AddLocalRpcTarget(server, new JsonRpcTargetOptions
+        {
+            MethodNameTransform = m => m.Length == 0 ? m : char.ToLowerInvariant(m[0]) + m.Substring(1),
+            UseSingleObjectParameterDeserialization = true,
+        });
+        rpc.AddLocalRpcTarget(server.Sync, new JsonRpcTargetOptions
         {
             MethodNameTransform = m => m.Length == 0 ? m : char.ToLowerInvariant(m[0]) + m.Substring(1),
             UseSingleObjectParameterDeserialization = true,
@@ -65,4 +78,38 @@ internal static class ServerPipeline
         Console.WriteLine($"compiler-line {ServerMetadata.CompilerCompatibilityLine}");
     }
 
+    private static bool TryLoadTooling(ILspLogger logger)
+    {
+        try
+        {
+            string path = Path.Combine(AppContext.BaseDirectory, "Cvolo.Compiler.Tooling.dll");
+            if (!File.Exists(path))
+            {
+                logger.Error($"Cvolo.Compiler.Tooling.dll was not found at {path}.");
+                return false;
+            }
+
+            Assembly assembly = AssemblyLoadContext.Default.LoadFromAssemblyPath(path);
+            Type? workspaceType = assembly.GetType("Cvolo.Compiler.Tooling.CvoloWorkspace", throwOnError: false);
+            if (workspaceType is null)
+            {
+                logger.Error("Cvolo.Compiler.Tooling loaded but the CvoloWorkspace type was not found.");
+                return false;
+            }
+
+            if (!ReferenceEquals(workspaceType, typeof(CvoloWorkspace)))
+            {
+                logger.Error("CvoloWorkspace type identity mismatch; tooling is incompatible with this server.");
+                return false;
+            }
+
+            logger.Info($"Cvolo.Compiler.Tooling {assembly.GetName().Version} loaded successfully.");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            logger.Error($"Failed to load Cvolo.Compiler.Tooling: {ex.Message}");
+            return false;
+        }
+    }
 }

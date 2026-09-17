@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <!-- Tooling location is produced by build/fetch-tooling.ps1|.sh. -->
+  <Import Project="$(MSBuildThisFileDirectory)..\..\artifacts\tooling-dir.props"
+          Condition="Exists('$(MSBuildThisFileDirectory)..\..\artifacts\tooling-dir.props')" />
+
+  <Target Name="EnsureToolingRestored"
+          BeforeTargets="ResolveReferences"
+          Condition="'$(CvoloToolingDir)' == ''">
+    <Error Text="Cvolo.Compiler.Tooling is not restored at $(MSBuildThisFileDirectory)..\..\artifacts\tooling. Run build/fetch-tooling.ps1 (Windows) or build/fetch-tooling.sh (POSIX) from the repository root before building." />
+  </Target>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Cvolo.LanguageServer.Core\Cvolo.LanguageServer.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(CvoloToolingDir)' != ''">
+    <Reference Include="Cvolo.Compiler.Tooling">
+      <HintPath>$(CvoloToolingDir)/Cvolo.Compiler.Tooling.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+  </ItemGroup>
+
+</Project>

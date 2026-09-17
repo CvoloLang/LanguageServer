@@ -1,3 +1,4 @@
+using Cvolo.LanguageServer.Core;
 using Cvolo.LanguageServer.Logging;
 using Cvolo.LanguageServer.Protocol;
 using Newtonsoft.Json;
@@ -25,6 +26,9 @@ internal sealed class ServerHost : IDisposable
     /// <summary>Test-only view of whether the hosted server accepted 'initialized'.</summary>
     public bool InitializedReceived => _server.InitializedReceived;
 
+    /// <summary>The document store behind the sync handler (created on first use).</summary>
+    public DocumentStore Store => _server.Sync.Store;
+
     private ServerHost(JsonRpc rpc, LanguageServerImpl server, HeaderDelimitedMessageHandler handler, RecordingStream serverOutput, TerminationRequest termination)
     {
         _rpc = rpc;
@@ -45,6 +49,11 @@ internal sealed class ServerHost : IDisposable
         HeaderDelimitedMessageHandler handler = new(serverOutput, transport.ServerInput, formatter);
         JsonRpc rpc = new(handler);
         rpc.AddLocalRpcTarget(server, new JsonRpcTargetOptions
+        {
+            MethodNameTransform = m => m.Length == 0 ? m : char.ToLowerInvariant(m[0]) + m.Substring(1),
+            UseSingleObjectParameterDeserialization = true,
+        });
+        rpc.AddLocalRpcTarget(server.Sync, new JsonRpcTargetOptions
         {
             MethodNameTransform = m => m.Length == 0 ? m : char.ToLowerInvariant(m[0]) + m.Substring(1),
             UseSingleObjectParameterDeserialization = true,

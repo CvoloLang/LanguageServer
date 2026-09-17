@@ -6,7 +6,9 @@ public interface ILspLogger
 {
     bool IsVerboseEnabled { get; }
     TextWriter? RawSink { get; }
+    void Debug(string message);
     void Info(string message);
+    void Warning(string message);
     void Verbose(string message);
     void Error(string message);
 }
@@ -28,6 +30,21 @@ public sealed class LspLogger(bool verbose, string? logFilePath) : ILspLogger, I
 
     public TextWriter? RawSink => IsVerboseEnabled ? (_file ?? Console.Error) : null;
 
+    public void Debug(string message)
+    {
+        if (!IsVerboseEnabled)
+        {
+            return;
+        }
+
+        var line = Format("debug", message);
+        _file?.WriteLine(line);
+        if (_file is null)
+        {
+            Console.Error.WriteLine(line);
+        }
+    }
+
     public void Info(string message)
     {
         var line = Format("info", message);
@@ -36,6 +53,12 @@ public sealed class LspLogger(bool verbose, string? logFilePath) : ILspLogger, I
         {
             Console.Error.WriteLine(line);
         }
+    }
+
+    public void Warning(string message)
+    {
+        _file?.WriteLine(Format("warning", message));
+        Console.Error.WriteLine(Format("warning", message));
     }
 
     public void Verbose(string message)

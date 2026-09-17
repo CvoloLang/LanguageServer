@@ -11,7 +11,7 @@ namespace Cvolo.LanguageServer.Tests.Protocol;
 public class LifecycleTests
 {
     [Fact]
-    public async Task Initialize_ReturnsLspHandshakeWithEmptyCapabilities()
+    public async Task Initialize_ReturnsLspHandshakeWithIncrementalTextSync()
     {
         using var session = ProtocolSession.Start();
         InitializeResponse response = await session.Client
@@ -24,8 +24,18 @@ public class LifecycleTests
         var raw = JObject.Parse(Assert.Single(session.Server.GetServerFrames()));
         Assert.Equal("2.0", raw["jsonrpc"]?.Value<string>());
         var capabilities = (JObject)raw["result"]!["capabilities"]!;
-        Assert.Empty(capabilities.Properties());
-        Assert.Null(capabilities["textDocumentSync"]);
+
+        var sync = (JObject)capabilities["textDocumentSync"]!;
+        Assert.Equal(true, sync["openClose"]?.Value<bool>());
+        Assert.Equal(2, sync["change"]?.Value<int>());
+        Assert.Null(sync["save"]);
+
+        Assert.Null(capabilities["completionProvider"]);
+        Assert.Null(capabilities["definitionProvider"]);
+        Assert.Null(capabilities["hoverProvider"]);
+        Assert.Null(capabilities["semanticTokensProvider"]);
+        Assert.Null(capabilities["documentFormattingProvider"]);
+
         Assert.Equal("cvolo-language-server", raw["result"]!["serverInfo"]!["name"]!.Value<string>());
         Assert.Equal(response.ServerInfo.Version, raw["result"]!["serverInfo"]!["version"]!.Value<string>());
 

@@ -38,9 +38,52 @@ internal sealed class TestClient : IDisposable
         return response!;
     }
 
+    /// <summary>
+    /// Initializes with the server's own params shape, so tests can send
+    /// <c>workspaceFolders</c> (absent from the protocol library's model).
+    /// </summary>
+    public Task<InitializeResponse> InitializeWithAsync(InitializeRequestParams payload)
+    {
+        return _rpc.InvokeWithParameterObjectAsync<InitializeResponse>(Methods.InitializeName, payload);
+    }
+
     public Task NotifyInitializedAsync()
     {
         return _rpc.NotifyAsync(Methods.InitializedName, new InitializedParams());
+    }
+
+    public Task NotifyDidOpenAsync(Uri uri, string languageId, int version, string text)
+    {
+        return _rpc.NotifyAsync(Methods.TextDocumentDidOpenName, new DidOpenTextDocumentParams
+        {
+            TextDocument = new TextDocumentItem { Uri = uri, LanguageId = languageId, Version = version, Text = text },
+        });
+    }
+
+    public Task NotifyDidChangeAsync(Uri uri, int version, params TextDocumentContentChangeEvent[] changes)
+    {
+        return _rpc.NotifyAsync(Methods.TextDocumentDidChangeName, new DidChangeTextDocumentParams
+        {
+            TextDocument = new VersionedTextDocumentIdentifier { Uri = uri, Version = version },
+            ContentChanges = changes,
+        });
+    }
+
+    public Task NotifyDidCloseAsync(Uri uri)
+    {
+        return _rpc.NotifyAsync(Methods.TextDocumentDidCloseName, new DidCloseTextDocumentParams
+        {
+            TextDocument = new TextDocumentIdentifier { Uri = uri },
+        });
+    }
+
+    /// <summary>
+    /// Round-trips an unknown method so any notification sent before it is
+    /// guaranteed to have been dispatched by the server before this returns.
+    /// </summary>
+    public async Task DrainNotificationsAsync()
+    {
+        await ExpectErrorAsync("cvolo/unknownRequest", null).ConfigureAwait(false);
     }
 
     public Task<object?> InvokeDelayedAsync(CancellationToken cancellationToken = default)
@@ -97,9 +140,25 @@ internal sealed class TestClient : IDisposable
     }
 
     /// <summary>Writes a raw JSON body as a framed JSON-RPC message.</summary>
+    /// <summary>Writes a raw JSON body as a framed JSON-RPC message.</summary>
     public void SendRawJson(string json)
     {
         _clientOutput.Write(FrameParser.EncodeFrame(json));
+    }
+
+    /// <summary>Polls until a condition holds, because notifications dispatch asynchronously.</summary>
+    public async Task WaitUntilAsync(Func<bool> condition, string label, TimeSpan? timeout = null)
+    {
+        var deadline = DateTime.UtcNow + (timeout ?? TimeSpan.FromSeconds(2));
+        while (!condition())
+        {
+            if (DateTime.UtcNow >= deadline)
+            {
+                throw new XunitException($"Timed out waiting for: {label}");
+            }
+
+            await Task.Delay(10);
+        }
     }
 
     public void Dispose()

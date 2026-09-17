@@ -184,9 +184,20 @@
       "cvolo-language-server": {
         "type": "Project",
         "dependencies": {
+          "Cvolo.LanguageServer.Core": "[0.1.0, )",
+          "Cvolo.LanguageServer.Cvolo": "[0.1.0, )",
           "Microsoft.VisualStudio.LanguageServer.Protocol": "[17.2.8, )",
           "StreamJsonRpc": "[2.25.29, )",
           "System.CommandLine": "[2.0.9, )"
+        }
+      },
+      "cvolo.languageserver.core": {
+        "type": "Project"
+      },
+      "cvolo.languageserver.cvolo": {
+        "type": "Project",
+        "dependencies": {
+          "Cvolo.LanguageServer.Core": "[0.1.0, )"
         }
       }
     }

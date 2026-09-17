@@ -24,6 +24,19 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Cvolo.LanguageServer\Cvolo.LanguageServer.csproj" />
+    <ProjectReference Include="..\..\src\Cvolo.LanguageServer.Core\Cvolo.LanguageServer.Core.csproj" />
+    <ProjectReference Include="..\..\src\Cvolo.LanguageServer.Cvolo\Cvolo.LanguageServer.Cvolo.csproj" />
+  </ItemGroup>
+
+  <!-- Compile-time access to the pinned tooling for backend assertions. The
+       runtime copy is delivered to the test output by CopyServerOutputForProcessTests. -->
+  <Import Project="$(MSBuildThisFileDirectory)..\..\artifacts\tooling-dir.props"
+          Condition="Exists('$(MSBuildThisFileDirectory)..\..\artifacts\tooling-dir.props')" />
+  <ItemGroup Condition="'$(CvoloToolingDir)' != ''">
+    <Reference Include="Cvolo.Compiler.Tooling">
+      <HintPath>$(CvoloToolingDir)/Cvolo.Compiler.Tooling.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
   </ItemGroup>
 
   <!--
