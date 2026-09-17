@@ -24,6 +24,7 @@ public class DiagnosticProcessTests
         server.SendJson(JsonRpcFrames.Notification("textDocument/didOpen", $"{{\"textDocument\":{{\"uri\":\"{uri}\",\"languageId\":\"cvolo\",\"version\":1,\"text\":\"{InvalidText}\"}}}}"));
         var opened = await WaitForPublishAsync(server, uri, list => list.Count >= 1 && list[^1].Count > 0).WithTimeout("didOpen diagnostics");
         Assert.Equal("cvolo", (string?)opened[^1].Diagnostics[0]["source"]);
+        Assert.StartsWith("file:", opened[^1].Uri, StringComparison.OrdinalIgnoreCase);
 
         server.SendJson(JsonRpcFrames.Notification("textDocument/didChange", $"{{\"textDocument\":{{\"uri\":\"{uri}\",\"version\":2}},\"contentChanges\":[{{\"text\":\"{ValidText}\"}}]}}"));
         await WaitForPublishAsync(server, uri, list => list.Count >= 2 && list[^1].Count == 0).WithTimeout("didChange cleared diagnostics");

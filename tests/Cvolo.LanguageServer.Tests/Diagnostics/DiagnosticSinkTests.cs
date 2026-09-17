@@ -1,11 +1,31 @@
 using Cvolo.LanguageServer.Diagnostics;
 using Cvolo.LanguageServer.Tests.TestSupport;
+using Newtonsoft.Json;
 using Xunit;
 
 namespace Cvolo.LanguageServer.Tests.Diagnostics;
 
 public class DiagnosticSinkTests
 {
+    [Fact]
+    public void UriJsonConverter_SerializesWindowsDrivePathAsFileUri()
+    {
+        var path = @"d:\Programming\CvoloLang\TestCases\SimpleTestCase\Main.cvl";
+
+        var json = JsonConvert.SerializeObject(new Uri(path), new UriJsonConverter());
+
+        Assert.Equal("\"file:///d:/Programming/CvoloLang/TestCases/SimpleTestCase/Main.cvl\"", json);
+    }
+
+    [Fact]
+    public void UriJsonConverter_ReadsFileUri()
+    {
+        var uri = JsonConvert.DeserializeObject<Uri>("\"file:///d:/x/Main.cvl\"", new UriJsonConverter());
+
+        Assert.NotNull(uri);
+        Assert.True(uri!.IsFile);
+    }
+
     [Fact]
     public async Task ObserveNotification_LogsAsynchronouslyFaultedTask()
     {

@@ -50,6 +50,7 @@ internal sealed class ServerHost : IDisposable
         JsonMessageFormatter formatter = new();
         formatter.JsonSerializer.ContractResolver = new CamelCasePropertyNamesContractResolver();
         formatter.JsonSerializer.NullValueHandling = NullValueHandling.Ignore;
+        formatter.JsonSerializer.Converters.Add(new UriJsonConverter());
         HeaderDelimitedMessageHandler handler = new(serverOutput, transport.ServerInput, formatter);
         JsonRpc rpc = new(handler);
         server.Diagnostics.Attach(rpc);

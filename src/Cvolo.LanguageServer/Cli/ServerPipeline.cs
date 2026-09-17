@@ -1,6 +1,7 @@
 #if CVOLO_MANAGED_TOOLING
 using Cvolo.Compiler.Tooling;
 #endif
+using Cvolo.LanguageServer.Diagnostics;
 using Cvolo.LanguageServer.Logging;
 using Cvolo.LanguageServer.Protocol;
 using Newtonsoft.Json;
@@ -38,6 +39,7 @@ internal static class ServerPipeline
         JsonMessageFormatter formatter = new();
         formatter.JsonSerializer.ContractResolver = new CamelCasePropertyNamesContractResolver();
         formatter.JsonSerializer.NullValueHandling = NullValueHandling.Ignore;
+        formatter.JsonSerializer.Converters.Add(new UriJsonConverter());
         Stream stdout = Console.OpenStandardOutput();
         Stream stdin = Console.OpenStandardInput();
         if (verbose && logger.RawSink is { } rawSink)
@@ -86,7 +88,7 @@ internal static class ServerPipeline
 #if CVOLO_MANAGED_TOOLING
         try
         {
-            string path = Path.Combine(AppContext.BaseDirectory, "Cvolo.Compiler.Tooling.dll");
+            var path = Path.Combine(AppContext.BaseDirectory, "Cvolo.Compiler.Tooling.dll");
             if (!File.Exists(path))
             {
                 logger.Error($"Cvolo.Compiler.Tooling.dll was not found at {path}.");
