@@ -1,3 +1,4 @@
+using Cvolo.LanguageServer.Core.Diagnostics;
 using Cvolo.LanguageServer.Core.Documents;
 
 namespace Cvolo.LanguageServer.Core.Backend;
@@ -41,20 +42,37 @@ internal interface ILanguageBackend
     /// non-fatal: they only suppress state publication.
     /// </summary>
     BackendProject? OpenProject(DocumentUri document);
-
-    /// <summary>Resolves <paramref name="document"/> inside the project.</summary>
+    /// <summary>
+    /// Resolves <paramref name="document"/> inside the project.
+    /// </summary>
     bool TryResolveDocument(BackendProject project, DocumentUri document, out BackendDocumentHandle handle);
-
     /// <summary>
     /// Advances <paramref name="project"/> so <paramref name="document"/>'s
     /// text is <paramref name="text"/> and returns the new snapshot. The
     /// returned snapshot must be coherent with the new text.
     /// </summary>
     BackendSnapshot UpdateDocument(BackendProject project, BackendDocumentHandle handle, string text);
-
     /// <summary>
     /// Removes <paramref name="document"/>'s overlay, restoring the project
     /// baseline text, and returns the resulting snapshot.
     /// </summary>
     BackendSnapshot RestoreBaseline(BackendProject project, BackendDocumentHandle handle);
+    /// <summary>
+    /// Captures the project's current immutable snapshot together with its
+    /// adapter-owned generation. Used for semantic work that must be pinned to
+    /// one project state.
+    /// </summary>
+    BackendSnapshot CaptureCurrentSnapshot(BackendProject project);
+    /// <summary>
+    /// Reports whether <paramref name="snapshot"/> is still the project's
+    /// current snapshot. Implementations compare an adapter-owned generation,
+    /// not object identity.
+    /// </summary>
+    bool IsCurrentSnapshot(BackendProject project, BackendSnapshot snapshot);
+    /// <summary>
+    /// Computes diagnostics for <paramref name="targets"/> from
+    /// <paramref name="snapshot"/>. Every call must use that same snapshot so
+    /// one project analysis backs the whole result.
+    /// </summary>
+    BackendDiagnosticRun GetDiagnostics(BackendSnapshot snapshot, IReadOnlyList<BackendDocumentHandle> targets);
 }

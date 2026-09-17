@@ -1,3 +1,4 @@
+using Cvolo.LanguageServer.Diagnostics;
 using Cvolo.LanguageServer.Logging;
 using Microsoft.VisualStudio.LanguageServer.Protocol;
 using StreamJsonRpc;
@@ -13,14 +14,21 @@ namespace Cvolo.LanguageServer.Protocol;
 internal sealed class LanguageServer(TerminationRequest termination, ILspLogger logger, IClientProcessWatcher clientWatcher) : IDisposable
 {
     private readonly SessionState _state = new();
+    private readonly DiagnosticSink _diagnostics = new(logger);
     private readonly CancellationTokenSource _sessionCancellation = new();
     private TextDocumentSyncHandler? _sync;
     private Timer? _deadClientExitTimer;
 
     /// <summary>
+    /// Server-to-client diagnostic notification channel. The transport attaches
+    /// the JSON-RPC endpoint once it exists.
+    /// </summary>
+    internal DiagnosticSink Diagnostics => _diagnostics;
+
+    /// <summary>
     /// Text document synchronization (didOpen/didChange/didClose) handler.
     /// </summary>
-    internal TextDocumentSyncHandler Sync => _sync ??= new TextDocumentSyncHandler(logger, () => _state.WorkspaceFolders, () => _state.WorkspaceRoot);
+    internal TextDocumentSyncHandler Sync => _sync ??= new TextDocumentSyncHandler(logger, _diagnostics, () => _state.WorkspaceFolders, () => _state.WorkspaceRoot);
 
     public InitializeResponse Initialize(InitializeRequestParams? initializeParams)
     {
@@ -82,6 +90,8 @@ internal sealed class LanguageServer(TerminationRequest termination, ILspLogger 
         }
 
         _state.MarkInitializeReceived(initializeParams);
+        _diagnostics.SetRelatedInformationSupported(
+            initializeParams.Capabilities?.TextDocument?.PublishDiagnostics?.RelatedInformation == true);
         logger.Info("Client initialized.");
 
         return new InitializeResponse(
@@ -171,6 +181,7 @@ internal sealed class LanguageServer(TerminationRequest termination, ILspLogger 
     public void Dispose()
     {
         DisarmClientWatcher();
+        _sync?.Dispose();
         _deadClientExitTimer?.Dispose();
         _deadClientExitTimer = null;
         _sessionCancellation.Dispose();

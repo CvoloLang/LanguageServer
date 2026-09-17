@@ -339,6 +339,36 @@ public class TextDocumentSyncHandlerTests : IDisposable
         Assert.Equal("unbounded text", state!.Text);
     }
 
+    [Fact]
+    public void TryCreateDocumentUri_DecodesPercentEncodedDriveLetterColon()
+    {
+        var uri = new Uri("file:///d%3A/Programming/CvoloLang/TestCases/SimpleTestCase/Main.cvl");
+
+        Assert.True(TextDocumentSyncHandler.TryCreateDocumentUri(uri, out DocumentUri documentUri));
+        Assert.True(documentUri.IsValid);
+        Assert.Equal(".cvl", Path.GetExtension(documentUri.LocalPath), StringComparer.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void TryCreateDocumentUri_NonFileUri_IsRejected()
+    {
+        Assert.False(TextDocumentSyncHandler.TryCreateDocumentUri(new Uri("https://example.com/Main.cvl"), out _));
+    }
+
+    [Fact]
+    public async Task DidOpen_PercentEncodedDriveLetter_OpensDocument()
+    {
+        var store = await StartSessionAsync();
+        var path = _workspace.PathOf("main.cvl");
+        var encoded = new Uri("file:///" + path.Replace('\\', '/').Replace(":", "%3A"));
+
+        await _session.Client.NotifyDidOpenAsync(encoded, "cvolo", 1, "encoded text").WithTimeout("didOpen");
+        await _session.Client.WaitUntilAsync(() => store.TryGet(DocumentUri.Create(path), out var s) && s.Text == "encoded text", "didOpen applied");
+
+        Assert.True(store.TryGet(DocumentUri.Create(path), out var state));
+        Assert.Equal("encoded text", state!.Text);
+    }
+
     private static WorkspaceFolderItem Folder(string directoryPath, string name)
     {
         return new WorkspaceFolderItem(new Uri(directoryPath).ToString(), name);

@@ -1,5 +1,6 @@
 using Cvolo.LanguageServer.Core;
 using Cvolo.LanguageServer.Core.Backend;
+using Cvolo.LanguageServer.Core.Diagnostics;
 using Cvolo.LanguageServer.Core.Documents;
 using Cvolo.LanguageServer.Core.Logging;
 using Cvolo.LanguageServer.Tests.TestSupport;
@@ -248,7 +249,7 @@ public class DocumentStoreTests
         Assert.Equal(opened.SessionId, context.SessionId);
         Assert.Equal(new DocumentVersion(1), context.Version);
         Assert.Equal("v1 text", context.Document.Text);
-        Assert.Same(context.BackendSnapshot, context.Document.BackendSnapshot);
+        Assert.Same(context.CurrentProjectSnapshot, context.Document.BackendSnapshot);
         Assert.Equal("v1 text", backend.TextOf(A));
     }
 
@@ -271,11 +272,11 @@ public class DocumentStoreTests
 
         Assert.Equal(1, captured.Version.Value);
         Assert.Equal("root", captured.Document.Text);
-        Assert.Same(captured.BackendSnapshot, captured.Document.BackendSnapshot);
+        Assert.Same(captured.CurrentProjectSnapshot, captured.Document.BackendSnapshot);
 
         Assert.True(store.TryCapture(A, out var current));
         Assert.Equal(2, current.Version.Value);
-        Assert.NotEqual(captured.BackendSnapshot, current.BackendSnapshot);
+        Assert.NotEqual(captured.CurrentProjectSnapshot, current.CurrentProjectSnapshot);
     }
 
     private static DocumentUri At(int i)
@@ -317,7 +318,7 @@ public class DocumentStoreTests
 
                 if (!_projects.TryGetValue(document, out var project))
                 {
-                    project = new FakeProject();
+                    project = new FakeProject { CurrentSnapshot = new FakeSnapshot(string.Empty, 0) };
                     _projects[document] = project;
                 }
 
@@ -338,7 +339,9 @@ public class DocumentStoreTests
                 var fake = (FakeProject)project;
                 fake.Baseline ??= text;
                 fake.Current = text;
-                return new FakeSnapshot(text);
+                var snapshot = new FakeSnapshot(text, ++fake.Generation);
+                fake.CurrentSnapshot = snapshot;
+                return snapshot;
             }
         }
 
@@ -349,8 +352,33 @@ public class DocumentStoreTests
                 RestoreCalls += 1;
                 var fake = (FakeProject)project;
                 fake.Current = fake.Baseline ?? string.Empty;
-                return new FakeSnapshot(fake.Current);
+                var snapshot = new FakeSnapshot(fake.Current, ++fake.Generation);
+                fake.CurrentSnapshot = snapshot;
+                return snapshot;
             }
+        }
+
+        public BackendSnapshot CaptureCurrentSnapshot(BackendProject project)
+        {
+            lock (_gate)
+            {
+                var fake = (FakeProject)project;
+                return fake.CurrentSnapshot ?? new FakeSnapshot(fake.Current, fake.Generation);
+            }
+        }
+
+        public bool IsCurrentSnapshot(BackendProject project, BackendSnapshot snapshot)
+        {
+            lock (_gate)
+            {
+                var fake = (FakeProject)project;
+                return snapshot is FakeSnapshot current && current.Generation == fake.Generation;
+            }
+        }
+
+        public BackendDiagnosticRun GetDiagnostics(BackendSnapshot snapshot, IReadOnlyList<BackendDocumentHandle> targets)
+        {
+            return new BackendDiagnosticRun(new Dictionary<DocumentUri, string>(), []);
         }
 
         public string? TextOf(DocumentUri document)
@@ -367,11 +395,17 @@ public class DocumentStoreTests
         public string? Baseline { get; set; }
 
         public string Current { get; set; } = string.Empty;
+
+        public long Generation { get; set; }
+
+        public FakeSnapshot? CurrentSnapshot { get; set; }
     }
 
-    private sealed class FakeSnapshot(string text) : BackendSnapshot
+    private sealed class FakeSnapshot(string text, long generation) : BackendSnapshot
     {
         public string Text { get; } = text;
+
+        public long Generation { get; } = generation;
     }
 
     private sealed class FakeHandle(DocumentUri uri) : BackendDocumentHandle

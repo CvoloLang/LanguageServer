@@ -32,8 +32,8 @@ public class ToolingBoundaryTests
     [Fact]
     public void Server_ReferencesExactlyCompilerTooling_AmongCompilerFamily()
     {
-        Assembly server = typeof(global::Cvolo.LanguageServer.Protocol.LanguageServer).Assembly;
-        string[] direct = DirectCompilerFamilyReferences(server);
+        var server = typeof(LanguageServer.Protocol.LanguageServer).Assembly;
+        var direct = DirectCompilerFamilyReferences(server);
 
         Assert.Equal(ManagedToolingAvailable ? ExpectedDirectCompilerReferences : [], direct);
     }
@@ -41,8 +41,7 @@ public class ToolingBoundaryTests
     [Fact]
     public void Core_ReferencesNoCompilerProtocolOrAntlrAssemblies()
     {
-        Assembly core = typeof(global::Cvolo.LanguageServer.Core.DocumentStore).Assembly;
-        string[] names = DirectReferenceNames(core);
+        var names = DirectReferenceNames(typeof(Core.DocumentStore).Assembly);
 
         Assert.DoesNotContain(names, n => n.StartsWith("Cvolo.", StringComparison.Ordinal));
         Assert.DoesNotContain(names, n => n.Contains("Antlr4.Runtime", StringComparison.Ordinal));
@@ -52,11 +51,31 @@ public class ToolingBoundaryTests
     [Fact]
     public void Cvolo_ReferencesExactlyCompilerTooling_AmongCompilerFamily()
     {
-        Assembly cvolo = typeof(global::Cvolo.LanguageServer.Cvolo.CvoloLanguageBackend).Assembly;
-        string[] direct = DirectCompilerFamilyReferences(cvolo);
+        var cvolo = typeof(Cvolo.CvoloLanguageBackend).Assembly;
+        var direct = DirectCompilerFamilyReferences(cvolo);
 
         Assert.Equal(ManagedToolingAvailable ? ExpectedDirectCompilerReferences : [], direct);
         Assert.DoesNotContain(DirectReferenceNames(cvolo), n => n.StartsWith("Microsoft.VisualStudio.LanguageServer", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Server_ReferencesNoAntlrLlmOrCodegenAssemblies()
+    {
+        var server = typeof(LanguageServer.Protocol.LanguageServer).Assembly;
+        var names = DirectReferenceNames(server);
+
+        Assert.DoesNotContain(names, n => n.Contains("Antlr", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(names, n => n.Contains("LLVM", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(names, n => n.Contains("CodeGen", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void CvoloAdapter_ReferencesNoAntlrAssembly()
+    {
+        var cvolo = typeof(Cvolo.CvoloLanguageBackend).Assembly;
+        var names = DirectReferenceNames(cvolo);
+
+        Assert.DoesNotContain(names, n => n.Contains("Antlr", StringComparison.OrdinalIgnoreCase));
     }
 
     private static string[] DirectCompilerFamilyReferences(Assembly assembly)

@@ -1,4 +1,5 @@
 using Cvolo.LanguageServer.Core;
+using Cvolo.LanguageServer.Diagnostics;
 using Cvolo.LanguageServer.Logging;
 using Cvolo.LanguageServer.Protocol;
 using Newtonsoft.Json;
@@ -29,6 +30,9 @@ internal sealed class ServerHost : IDisposable
     /// <summary>The document store behind the sync handler (created on first use).</summary>
     public DocumentStore Store => _server.Sync.Store;
 
+    /// <summary>The diagnostic notification sink used by the hosted server.</summary>
+    public DiagnosticSink Diagnostics => _server.Diagnostics;
+
     private ServerHost(JsonRpc rpc, LanguageServerImpl server, HeaderDelimitedMessageHandler handler, RecordingStream serverOutput, TerminationRequest termination)
     {
         _rpc = rpc;
@@ -48,6 +52,7 @@ internal sealed class ServerHost : IDisposable
         formatter.JsonSerializer.NullValueHandling = NullValueHandling.Ignore;
         HeaderDelimitedMessageHandler handler = new(serverOutput, transport.ServerInput, formatter);
         JsonRpc rpc = new(handler);
+        server.Diagnostics.Attach(rpc);
         rpc.AddLocalRpcTarget(server, new JsonRpcTargetOptions
         {
             MethodNameTransform = m => m.Length == 0 ? m : char.ToLowerInvariant(m[0]) + m.Substring(1),

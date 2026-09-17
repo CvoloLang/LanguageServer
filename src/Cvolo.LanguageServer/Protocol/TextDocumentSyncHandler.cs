@@ -1,6 +1,8 @@
 using Cvolo.LanguageServer.Core;
+using Cvolo.LanguageServer.Core.Backend;
 using Cvolo.LanguageServer.Core.Documents;
 using Cvolo.LanguageServer.Cvolo;
+using Cvolo.LanguageServer.Diagnostics;
 using Cvolo.LanguageServer.Logging;
 using Microsoft.VisualStudio.LanguageServer.Protocol;
 using StreamJsonRpc;
@@ -10,21 +12,31 @@ namespace Cvolo.LanguageServer.Protocol;
 
 /// <summary>
 /// textDocument/didOpen, didChange and didClose handler. Converts wire payloads
-/// into core documents, feeds the <see cref="DocumentStore"/>, and never emits
-/// responses. All failures are non-fatal: the server stays alive and simply
-/// does not publish state.
+/// into core documents, feeds the <see cref="DocumentStore"/>, schedules
+/// diagnostics, and never emits responses. All failures are non-fatal: the
+/// server stays alive and simply does not publish state.
 /// </summary>
-internal sealed class TextDocumentSyncHandler(ILspLogger logger, Func<IReadOnlyList<string>> workspaceFolders, Func<string?> workspaceRoot)
+internal sealed class TextDocumentSyncHandler(
+    ILspLogger logger,
+    DiagnosticSink diagnostics,
+    Func<IReadOnlyList<string>> workspaceFolders,
+    Func<string?> workspaceRoot) : IDisposable
 {
     private const string CvoloLanguageId = "cvolo";
 
     private DocumentStore? _store;
+    private DiagnosticPublisher? _publisher;
+    private DiagnosticScheduler? _scheduler;
 
     /// <summary>
     /// Lazily-built store; the workspace folders and fallback root from
     /// initialize are fixed for the session.
     /// </summary>
     internal DocumentStore Store => _store ??= CreateStore();
+
+    private DiagnosticPublisher Publisher => _publisher ??= new DiagnosticPublisher(logger, diagnostics);
+
+    private DiagnosticScheduler Scheduler => _scheduler ??= new DiagnosticScheduler(Store, Publisher, logger);
 
     [JsonRpcMethod(Methods.TextDocumentDidOpenName, UseSingleObjectParameterDeserialization = true)]
     public void DidOpen(DidOpenTextDocumentParams? parameters)
@@ -52,7 +64,20 @@ internal sealed class TextDocumentSyncHandler(ILspLogger logger, Func<IReadOnlyL
             logger.Debug($"didOpen for '{documentUri}' reports languageId '{item.LanguageId}' (expected '{CvoloLanguageId}').");
         }
 
-        Store.Open(documentUri, item.LanguageId, item.Version, item.Text);
+        if (Store.Open(documentUri, item.LanguageId, item.Version, item.Text) is null)
+        {
+            logger.Warning($"[diag] didOpen for '{documentUri}' was rejected; diagnostics not scheduled.");
+            return;
+        }
+
+        if (!Store.TryGetProject(documentUri, out BackendProject? project))
+        {
+            logger.Warning($"[diag] no backend project for '{documentUri}'; diagnostics not scheduled.");
+            return;
+        }
+
+        logger.Info($"[diag] didOpen '{documentUri}' v{item.Version}; scheduling diagnostics.");
+        Scheduler.Schedule(project);
     }
 
     [JsonRpcMethod(Methods.TextDocumentDidChangeName, UseSingleObjectParameterDeserialization = true)]
@@ -82,7 +107,20 @@ internal sealed class TextDocumentSyncHandler(ILspLogger logger, Func<IReadOnlyL
             changes.Add(new DocumentChange(range, change.Text ?? string.Empty));
         }
 
-        Store.ApplyChanges(documentUri, textDocument.Version, changes);
+        if (Store.ApplyChanges(documentUri, textDocument.Version, changes) is null)
+        {
+            logger.Debug($"[diag] didChange for '{documentUri}' v{textDocument.Version} was not applied; diagnostics not scheduled.");
+            return;
+        }
+
+        if (!Store.TryGetProject(documentUri, out BackendProject? project))
+        {
+            logger.Warning($"[diag] no backend project for '{documentUri}'; diagnostics not scheduled.");
+            return;
+        }
+
+        logger.Info($"[diag] didChange '{documentUri}' v{textDocument.Version}; scheduling diagnostics.");
+        Scheduler.Schedule(project);
     }
 
     [JsonRpcMethod(Methods.TextDocumentDidCloseName, UseSingleObjectParameterDeserialization = true)]
@@ -105,7 +143,28 @@ internal sealed class TextDocumentSyncHandler(ILspLogger logger, Func<IReadOnlyL
             return;
         }
 
-        Store.Close(documentUri);
+        BackendProject? project = Store.Close(documentUri);
+        if (project is null)
+        {
+            logger.Debug($"[diag] didClose for '{documentUri}' ignored; document was not open.");
+            return;
+        }
+
+        logger.Info($"[diag] didClose '{documentUri}'; cleared published diagnostics.");
+        Publisher.PublishEmpty(documentUri);
+        if (Store.HasOpenDocuments(project))
+        {
+            Scheduler.Schedule(project);
+        }
+        else
+        {
+            Scheduler.OnProjectDrained(project);
+        }
+    }
+
+    public void Dispose()
+    {
+        _scheduler?.Dispose();
     }
 
     private DocumentStore CreateStore()
@@ -130,11 +189,35 @@ internal sealed class TextDocumentSyncHandler(ILspLogger logger, Func<IReadOnlyL
         return new DocumentStore(new CvoloLanguageBackend(folders, root, coreLogger), coreLogger);
     }
 
-    private static bool TryCreateDocumentUri(Uri? uri, out DocumentUri documentUri)
+    internal static bool TryCreateDocumentUri(Uri? uri, out DocumentUri documentUri)
     {
         if (uri is { IsAbsoluteUri: true } && string.Equals(uri.Scheme, Uri.UriSchemeFile, StringComparison.OrdinalIgnoreCase))
         {
-            return DocumentUri.TryCreate(uri.LocalPath, out documentUri);
+            var path = uri.LocalPath;
+
+            // VS Code percent-encodes the Windows drive-letter colon
+            // (file:///d%3A/...), which .NET surfaces as '/d:/...': a leading
+            // slash that is not a valid fully-qualified Windows path. Strip it.
+            if (OperatingSystem.IsWindows()
+                && path.Length >= 3
+                && path[0] == '/'
+                && char.IsLetter(path[1])
+                && path[2] == ':')
+            {
+                path = path.Substring(1);
+            }
+
+            try
+            {
+                path = Path.GetFullPath(path);
+            }
+            catch (Exception)
+            {
+                documentUri = default;
+                return false;
+            }
+
+            return DocumentUri.TryCreate(path, out documentUri);
         }
 
         documentUri = default;

@@ -45,9 +45,12 @@
 
   <ItemGroup Condition="'$(CvoloManagedToolingAvailable)' != 'true'">
     <Compile Remove="Backend\CvoloLanguageBackendTests.cs" />
+    <Compile Remove="Backend\CvoloDiagnosticAdapterTests.cs" />
     <Compile Remove="Protocol\TextDocumentSyncHandlerTests.cs" />
+    <Compile Remove="Diagnostics\DiagnosticPublicationTests.cs" />
+    <Compile Remove="Diagnostics\CrossFileDiagnosticTests.cs" />
+    <Compile Remove="EndToEnd\DiagnosticProcessTests.cs" />
   </ItemGroup>
-
   <!--
     Process-level tests spawn the real server executable. Project references
     only copy the managed assembly, so mirror the entire server output (apphost,

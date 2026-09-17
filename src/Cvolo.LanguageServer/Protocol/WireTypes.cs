@@ -30,6 +30,28 @@ internal sealed class InitializeRequestParams
     public string? RootPath { get; init; }
     public Uri? RootUri { get; init; }
     public WorkspaceFolderItem[]? WorkspaceFolders { get; init; }
+    public ClientCapabilitiesPayload? Capabilities { get; init; }
+}
+
+/// <summary>
+/// Server-side shape of the subset of <c>ClientCapabilities</c> the server
+/// reads. The protocol library's model does not surface
+/// <c>textDocument.publishDiagnostics.relatedInformation</c>, so the server
+/// deserializes its own minimal view.
+/// </summary>
+internal sealed class ClientCapabilitiesPayload
+{
+    public TextDocumentClientCapabilitiesPayload? TextDocument { get; init; }
+}
+
+internal sealed class TextDocumentClientCapabilitiesPayload
+{
+    public PublishDiagnosticsClientCapabilitiesPayload? PublishDiagnostics { get; init; }
+}
+
+internal sealed class PublishDiagnosticsClientCapabilitiesPayload
+{
+    public bool? RelatedInformation { get; init; }
 }
 
 /// <summary>

@@ -48,6 +48,7 @@ internal static class ServerPipeline
 
         using HeaderDelimitedMessageHandler handler = new(stdout, stdin, formatter);
         JsonRpc rpc = new(handler);
+        server.Diagnostics.Attach(rpc);
         rpc.AddLocalRpcTarget(server, new JsonRpcTargetOptions
         {
             MethodNameTransform = m => m.Length == 0 ? m : char.ToLowerInvariant(m[0]) + m.Substring(1),
