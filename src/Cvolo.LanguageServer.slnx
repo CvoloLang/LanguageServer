@@ -1,3 +1,8 @@
 <Solution>
-  <Project Path="Cvolo.LanguageServer/Cvolo.LanguageServer.csproj" />
+  <Folder Name="/src/">
+    <Project Path="Cvolo.LanguageServer/Cvolo.LanguageServer.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="../tests/Cvolo.LanguageServer.Tests/Cvolo.LanguageServer.Tests.csproj" />
+  </Folder>
 </Solution>

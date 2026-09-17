@@ -1,9 +1,64 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
+    <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <AssemblyName>cvolo-language-server</AssemblyName>
+    <RootNamespace>Cvolo.LanguageServer</RootNamespace>
+    <ServerName>cvolo-language-server</ServerName>
   </PropertyGroup>
+
+  <!-- Tooling location is produced by build/fetch-tooling.ps1|.sh. -->
+  <Import Project="$(MSBuildThisFileDirectory)..\..\artifacts\tooling-dir.props"
+          Condition="Exists('$(MSBuildThisFileDirectory)..\..\artifacts\tooling-dir.props')" />
+
+  <Target Name="EnsureToolingRestored"
+          BeforeTargets="ResolveReferences"
+          Condition="'$(CvoloToolingDir)' == ''">
+    <Error Text="Cvolo.Compiler.Tooling is not restored at $(MSBuildThisFileDirectory)..\..\artifacts\tooling. Run build/fetch-tooling.ps1 (Windows) or build/fetch-tooling.sh (POSIX) from the repository root before building." />
+  </Target>
+
+  <!--
+    Embed tooling metadata into the assembly so the runtime can report the
+    tooling version and compiler compatibility line without touching the
+    artifacts directory (for example when printing version info).
+  -->
+  <Target Name="EmitToolingMetadata" BeforeTargets="GetAssemblyAttributes" Condition="'$(CvoloToolingVersion)' != ''">
+    <ItemGroup>
+      <AssemblyMetadata Include="ToolingVersion" Value="$(CvoloToolingVersion)" />
+      <AssemblyMetadata Include="CompilerCompatibilityLine" Value="$(CompilerCompatLine)" />
+    </ItemGroup>
+  </Target>
+
+  <ItemGroup Condition="'$(CvoloToolingDir)' != ''">
+    <Reference Include="Cvolo.Compiler.Tooling">
+      <HintPath>$(CvoloToolingDir)/Cvolo.Compiler.Tooling.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.VisualStudio.LanguageServer.Protocol" Version="17.2.8" />
+    <PackageReference Include="StreamJsonRpc" Version="2.25.29" />
+    <PackageReference Include="System.CommandLine" Version="2.0.9" />
+  </ItemGroup>
+
+  <!--
+    The other tooling bundle assemblies are runtime-only dependencies: the
+    server references only Cvolo.Compiler.Tooling directly and must ship the
+    rest of the bundle beside the executable without compile references.
+  -->
+  <Target Name="CopyToolingRuntimeDeps" AfterTargets="Build" Condition="'$(CvoloToolingDir)' != ''">
+    <ItemGroup>
+      <_ToolingRuntime Include="$(CvoloToolingDir)\*.dll"
+                       Exclude="$(CvoloToolingDir)\Cvolo.Compiler.Tooling.dll"
+                       Condition="Exists('$(CvoloToolingDir)\*.dll')" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_ToolingRuntime)"
+          DestinationFolder="$(OutputPath)"
+          SkipUnchangedFiles="true" />
+  </Target>
 
 </Project>

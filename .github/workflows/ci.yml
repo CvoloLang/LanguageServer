@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+    tags: ['*']
+  pull_request:
+
+jobs:
+  build-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      ContinuousIntegrationBuild: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Validate release tag matches Version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          version="$(sed -n 's/.*<Version>\([^<]*\)<\/Version>.*/\1/p' Directory.Build.props | head -n 1)"
+          if [ "$tag" != "$version" ]; then
+            echo "Release tag '$tag' does not match Version '$version' in Directory.Build.props." >&2
+            exit 1
+          fi
+
+      - name: Fetch pinned Tooling
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            pwsh -NoProfile -File build/fetch-tooling.ps1
+          else
+            bash build/fetch-tooling.sh
+          fi
+
+      - name: Restore (locked)
+        run: dotnet restore src/Cvolo.LanguageServer.slnx --locked-mode -p:ContinuousIntegrationBuild=true
+
+      - name: Build
+        run: dotnet build src/Cvolo.LanguageServer.slnx -c Release --no-restore -p:ContinuousIntegrationBuild=true
+
+      - name: Test
+        run: dotnet test tests/Cvolo.LanguageServer.Tests/Cvolo.LanguageServer.Tests.csproj -c Release --no-restore -p:ContinuousIntegrationBuild=true
