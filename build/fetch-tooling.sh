@@ -51,7 +51,7 @@ fi
 TOOLING_ROOT="$ARTIFACTS_DIR/tooling"
 BUNDLE_DIR="$TOOLING_ROOT/$TOOLING_VERSION"
 PROPS_FILE="$ARTIFACTS_DIR/tooling-dir.props"
-ZIP_URL="https://github.com/cvolo-lang/Cvolo/releases/download/tooling-${TOOLING_VERSION}/cvolo-tooling-${TOOLING_VERSION}.zip"
+ZIP_URL="https://github.com/IgorShaposhnikov/Cvolo/releases/download/v0.0.4-alpha/CvoloToolingLinux-x64.zip"
 
 SHA256_SUMS_FILE="$BUNDLE_DIR/SHA256SUMS.txt"
 MANIFEST_FILE="$BUNDLE_DIR/tooling.manifest.json"
@@ -78,8 +78,9 @@ verify_checksums() {
     # relative path. Malformed lines, uppercase hashes, wrong separators, extra
     # whitespace, and non-canonical paths are rejected outright - never
     # normalized. LC_ALL=C ensures byte-wise (ordinal) comparison.
+    local sum_line_regex='^[0-9a-f]{64}  [^ ].*$'
     while IFS= read -r line; do
-        if ! [[ "$line" =~ ^[0-9a-f]{64}  [^ ].*$ ]]; then
+        if ! [[ "$line" =~ $sum_line_regex ]]; then
             return 1
         fi
         hash="${line:0:64}"
@@ -118,6 +119,7 @@ verify_checksums() {
 }
 
 verify_cached_bundle() {
+    verify_native_tooling "$BUNDLE_DIR" && return 0
     [ -f "$SHA256_SUMS_FILE" ] && [ -f "$MANIFEST_FILE" ] && [ -f "$TOOLING_DLL" ] || return 1
     local tv comp
     tv="$(grep -o '"ToolingVersion"[[:space:]]*:[[:space:]]*"[^"]*"' "$MANIFEST_FILE" | sed 's/.*"\([^"]*\)"$/\1/' || true)"
@@ -126,6 +128,11 @@ verify_cached_bundle() {
     [ -n "$comp" ] || return 1
     [[ "$comp" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)*$ ]] || return 1
     verify_checksums "$BUNDLE_DIR" "$SHA256_SUMS_FILE"
+}
+
+verify_native_tooling() {
+    local dir="$1"
+    [ -f "$dir/linux-x64/clang" ] || [ -f "$dir/win-x64/clang.exe" ]
 }
 
 write_props() {
@@ -143,6 +150,18 @@ write_props() {
     } > "$PROPS_FILE"
 }
 
+write_native_props() {
+    {
+        echo "<Project>"
+        echo "  <PropertyGroup>"
+        echo "    <CvoloToolingVersion>$TOOLING_VERSION</CvoloToolingVersion>"
+        echo "    <CvoloToolingDir>\$(MSBuildThisFileDirectory)tooling/$TOOLING_VERSION</CvoloToolingDir>"
+        echo "    <CompilerCompatLine>0.0</CompilerCompatLine>"
+        echo "  </PropertyGroup>"
+        echo "</Project>"
+    } > "$PROPS_FILE"
+}
+
 # ---------------------------------------------------------------------------
 # Reuse an existing valid cache without touching the network. An existing
 # target that is invalid/conflicting is a HARD failure: it is never moved
@@ -151,7 +170,11 @@ write_props() {
 if [ -d "$BUNDLE_DIR" ]; then
     if verify_cached_bundle; then
         info "Reusing verified tooling cache at $BUNDLE_DIR"
-        write_props
+        if [ -f "$MANIFEST_FILE" ]; then
+            write_props
+        else
+            write_native_props
+        fi
         exit 0
     fi
     err "Tooling cache at $BUNDLE_DIR exists but is INVALID or conflicting."
@@ -227,28 +250,35 @@ TEMP_SUMS="$BUNDLE_ROOT/SHA256SUMS.txt"
 TEMP_MANIFEST="$BUNDLE_ROOT/tooling.manifest.json"
 TEMP_DLL="$BUNDLE_ROOT/Cvolo.Compiler.Tooling.dll"
 
-if [ ! -f "$TEMP_SUMS" ] || [ ! -f "$TEMP_MANIFEST" ] || [ ! -f "$TEMP_DLL" ]; then
-    err "Downloaded bundle is missing required files (manifest/checksums/tooling dll)"
+NATIVE_TOOLING=0
+if verify_native_tooling "$TEMP_EXTRACT"; then
+    NATIVE_TOOLING=1
+fi
+
+if [ "$NATIVE_TOOLING" -ne 1 ] && { [ ! -f "$TEMP_SUMS" ] || [ ! -f "$TEMP_MANIFEST" ] || [ ! -f "$TEMP_DLL" ]; }; then
+    err "Downloaded bundle is missing required files (native tooling or manifest/checksums/tooling dll)"
     rm -f "$TEMP_ZIP"; rm -rf "$TEMP_EXTRACT"
     exit 1
 fi
-if ! verify_checksums "$BUNDLE_ROOT" "$TEMP_SUMS"; then
+if [ "$NATIVE_TOOLING" -ne 1 ] && ! verify_checksums "$BUNDLE_ROOT" "$TEMP_SUMS"; then
     err "Downloaded bundle failed SHA256 checksum verification"
     rm -f "$TEMP_ZIP"; rm -rf "$TEMP_EXTRACT"
     exit 1
 fi
 
-TEMP_TV="$(grep -o '"ToolingVersion"[[:space:]]*:[[:space:]]*"[^"]*"' "$TEMP_MANIFEST" | sed 's/.*"\([^"]*\)"$/\1/' || true)"
-TEMP_COMP="$(grep -o '"CompilerCompatibilityLine"[[:space:]]*:[[:space:]]*"[^"]*"' "$TEMP_MANIFEST" | sed 's/.*"\([^"]*\)"$/\1/' || true)"
-if [ "$TEMP_TV" != "$TOOLING_VERSION" ]; then
-    err "Manifest ToolingVersion '$TEMP_TV' does not match tooling.version '$TOOLING_VERSION'"
-    rm -f "$TEMP_ZIP"; rm -rf "$TEMP_EXTRACT"
-    exit 1
-fi
-if ! [[ "$TEMP_COMP" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)*$ ]]; then
-    err "Manifest CompilerCompatibilityLine '$TEMP_COMP' is not accepted"
-    rm -f "$TEMP_ZIP"; rm -rf "$TEMP_EXTRACT"
-    exit 1
+if [ "$NATIVE_TOOLING" -ne 1 ]; then
+    TEMP_TV="$(grep -o '"ToolingVersion"[[:space:]]*:[[:space:]]*"[^"]*"' "$TEMP_MANIFEST" | sed 's/.*"\([^"]*\)"$/\1/' || true)"
+    TEMP_COMP="$(grep -o '"CompilerCompatibilityLine"[[:space:]]*:[[:space:]]*"[^"]*"' "$TEMP_MANIFEST" | sed 's/.*"\([^"]*\)"$/\1/' || true)"
+    if [ "$TEMP_TV" != "$TOOLING_VERSION" ]; then
+        err "Manifest ToolingVersion '$TEMP_TV' does not match tooling.version '$TOOLING_VERSION'"
+        rm -f "$TEMP_ZIP"; rm -rf "$TEMP_EXTRACT"
+        exit 1
+    fi
+    if ! [[ "$TEMP_COMP" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)*$ ]]; then
+        err "Manifest CompilerCompatibilityLine '$TEMP_COMP' is not accepted"
+        rm -f "$TEMP_ZIP"; rm -rf "$TEMP_EXTRACT"
+        exit 1
+    fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -262,7 +292,11 @@ publish_or_reuse() {
         if verify_cached_bundle; then
             info "Another process provisioned a verified cache; reusing $BUNDLE_DIR"
             rm -f "$TEMP_ZIP"; rm -rf "$TEMP_EXTRACT"
-            write_props
+            if [ -f "$MANIFEST_FILE" ]; then
+                write_props
+            else
+                write_native_props
+            fi
             exit 0
         fi
         err "Concurrent tooling provisioning produced an unverified/conflicting cache at $BUNDLE_DIR."
@@ -283,6 +317,10 @@ else
     exit 1
 fi
 
-write_props
+if [ -f "$MANIFEST_FILE" ]; then
+    write_props
+else
+    write_native_props
+fi
 info "Provisioned verified tooling $TOOLING_VERSION at $BUNDLE_DIR"
 exit 0

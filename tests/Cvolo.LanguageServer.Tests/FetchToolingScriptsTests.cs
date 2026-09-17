@@ -51,6 +51,18 @@ public class FetchToolingScriptsTests
             Encoding.UTF8.GetBytes("dummy tooling dll for fetch-tooling tests"));
     }
 
+    private static void WriteDummyNativeTooling(string bundleDir)
+    {
+        var nativeDir = OperatingSystem.IsWindows()
+            ? Path.Combine(bundleDir, "win-x64")
+            : Path.Combine(bundleDir, "linux-x64");
+        Directory.CreateDirectory(nativeDir);
+        File.WriteAllText(
+            Path.Combine(nativeDir, OperatingSystem.IsWindows() ? "clang.exe" : "clang"),
+            "dummy native tooling for fetch-tooling tests",
+            new UTF8Encoding(false));
+    }
+
     private static string BuildCanonicalSumsContent(string bundleDir)
     {
         var files = Directory.EnumerateFiles(bundleDir, "*", SearchOption.AllDirectories)
@@ -141,6 +153,7 @@ public class FetchToolingScriptsTests
             var bundle = BundleDir(root);
             WriteManifest(bundle, ToolingVersion, compatLine: "0.0");
             WriteDummyToolingDll(bundle);
+            WriteDummyNativeTooling(bundle);
             WriteSums(bundle, BuildCanonicalSumsContent(bundle));
 
             (var exit, var stdout, var stderr) = RunFetchScript(root);
