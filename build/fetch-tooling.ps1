@@ -38,6 +38,25 @@ if ([string]::IsNullOrEmpty($ArtifactsRoot)) {
 function Write-Err([string]$msg) { Write-Host "[fetch-tooling] $msg" -ForegroundColor Red }
 function Write-Info([string]$msg) { Write-Host "[fetch-tooling] $msg" -ForegroundColor Cyan }
 
+# SHA-256 via .NET directly. Get-FileHash lives in a PowerShell module that is
+# not always available in the constrained session used by the hermetic tests on
+# CI runners, so the bootstrap must not depend on it.
+function Get-Sha256Hex([string]$path) {
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $stream = [System.IO.File]::OpenRead($path)
+        try {
+            return [System.BitConverter]::ToString($sha.ComputeHash($stream)).Replace('-', '').ToLowerInvariant()
+        }
+        finally {
+            $stream.Dispose()
+        }
+    }
+    finally {
+        $sha.Dispose()
+    }
+}
+
 # ---------------------------------------------------------------------------
 # Read and validate the pinned version
 # ---------------------------------------------------------------------------
@@ -127,7 +146,7 @@ function Test-Checksums([string]$dir, [string]$sumsPath) {
                 $script:CheckReason = "on-disk file '$rel' is not listed in SHA256SUMS.txt"
                 return $false
             }
-            $actual = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            $actual = Get-Sha256Hex $file.FullName
             if ($actual -ne $ordinalLookup[$rel]) {
                 $script:CheckReason = "hash mismatch for '$rel'"
                 return $false
@@ -287,7 +306,7 @@ if (-not $shaMatch.Success) {
     exit 1
 }
 $expectedZipHash = $shaMatch.Groups[1].Value.ToLowerInvariant()
-$actualZipHash = (Get-FileHash -LiteralPath $tempZip -Algorithm SHA256).Hash.ToLowerInvariant()
+$actualZipHash = Get-Sha256Hex $tempZip
 if ($actualZipHash -ne $expectedZipHash) {
     Write-Err "Downloaded tooling archive does not match the published checksum asset."
     Write-Err "  expected: $expectedZipHash"
