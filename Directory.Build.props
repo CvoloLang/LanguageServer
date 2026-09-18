@@ -1,6 +1,6 @@
 <Project>
   <PropertyGroup>
-    <Version>0.1.0</Version>
+    <Version>0.1.0-alpha.1</Version>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <RestoreLockedMode Condition="'$(ContinuousIntegrationBuild)' == 'true'">true</RestoreLockedMode>
   </PropertyGroup>

@@ -27,9 +27,13 @@ jobs:
         shell: bash
         run: |
           tag="${GITHUB_REF#refs/tags/}"
+          case "$tag" in
+            v*) version_from_tag="${tag#v}" ;;
+            *) echo "Release tag must start with v." >&2; exit 1 ;;
+          esac
           version="$(sed -n 's/.*<Version>\([^<]*\)<\/Version>.*/\1/p' Directory.Build.props | head -n 1)"
-          if [ "$tag" != "$version" ]; then
-            echo "Release tag '$tag' does not match Version '$version' in Directory.Build.props." >&2
+          if [ "$version_from_tag" != "$version" ]; then
+            echo "Release tag version '$version_from_tag' does not match Version '$version' in Directory.Build.props." >&2
             exit 1
           fi
 

@@ -1,0 +1,259 @@
+name: Release Language Server
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: version
+        name: Validate tag and project version
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          case "$tag" in
+            v*) version="${tag#v}" ;;
+            *) echo "Release tag must start with v." >&2; exit 1 ;;
+          esac
+
+          project_version="$(sed -n 's/.*<Version>\([^<]*\)<\/Version>.*/\1/p' Directory.Build.props | head -n 1)"
+          if [ -z "$project_version" ]; then
+            echo "Could not read <Version> from Directory.Build.props." >&2
+            exit 1
+          fi
+          if [ "$version" != "$project_version" ]; then
+            echo "Tag version '$version' does not match Directory.Build.props Version '$project_version'." >&2
+            exit 1
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  test:
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      ContinuousIntegrationBuild: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Fetch pinned Tooling
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            pwsh -NoProfile -File build/fetch-tooling.ps1
+          else
+            bash build/fetch-tooling.sh
+          fi
+
+      - name: Restore (locked)
+        run: dotnet restore src/Cvolo.LanguageServer.slnx --locked-mode -p:ContinuousIntegrationBuild=true
+
+      - name: Build
+        run: dotnet build src/Cvolo.LanguageServer.slnx -c Release --no-restore -p:ContinuousIntegrationBuild=true
+
+      - name: Test
+        run: dotnet test tests/Cvolo.LanguageServer.Tests/Cvolo.LanguageServer.Tests.csproj -c Release --no-restore -p:ContinuousIntegrationBuild=true
+
+  publish:
+    needs: [validate, test]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            rid: win-x64
+            archive_ext: zip
+          - os: ubuntu-latest
+            rid: linux-x64
+            archive_ext: tar.gz
+          - os: ubuntu-24.04-arm
+            rid: linux-arm64
+            archive_ext: tar.gz
+          - os: macos-15-intel
+            rid: osx-x64
+            archive_ext: tar.gz
+          - os: macos-14
+            rid: osx-arm64
+            archive_ext: tar.gz
+
+    runs-on: ${{ matrix.os }}
+    env:
+      ContinuousIntegrationBuild: true
+      VERSION: ${{ needs.validate.outputs.version }}
+      RID: ${{ matrix.rid }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Fetch pinned Tooling
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            pwsh -NoProfile -File build/fetch-tooling.ps1
+          else
+            bash build/fetch-tooling.sh
+          fi
+
+      - name: Restore server for RID (locked)
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet restore src/Cvolo.LanguageServer/Cvolo.LanguageServer.csproj \
+            --locked-mode \
+            -r "$RID" \
+            -p:ContinuousIntegrationBuild=true
+
+      - name: Publish self-contained single-file server
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf artifacts/release/publish
+          mkdir -p artifacts/release/publish
+
+          dotnet publish src/Cvolo.LanguageServer/Cvolo.LanguageServer.csproj \
+            -c Release \
+            -r "$RID" \
+            --self-contained true \
+            --no-restore \
+            -p:PublishSingleFile=true \
+            -p:PublishTrimmed=false \
+            -p:PublishAot=false \
+            -p:DebugType=None \
+            -p:DebugSymbols=false \
+            -p:ContinuousIntegrationBuild=true \
+            -p:Version="$VERSION" \
+            -o artifacts/release/publish
+
+      - name: Validate single-file output and smoke --version
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            exe="artifacts/release/publish/cvolo-language-server.exe"
+          else
+            exe="artifacts/release/publish/cvolo-language-server"
+            chmod +x "$exe"
+          fi
+
+          test -f "$exe"
+          "$exe" --version
+
+          # Distribution is intentionally single-file. Ignore only files that
+          # the SDK may emit as non-runtime metadata; PDBs are disabled above.
+          unexpected="$(find artifacts/release/publish -maxdepth 1 -type f \
+            ! -name 'cvolo-language-server' \
+            ! -name 'cvolo-language-server.exe' \
+            -print)"
+          if [ -n "$unexpected" ]; then
+            echo "Unexpected files in single-file publish output:" >&2
+            echo "$unexpected" >&2
+            exit 1
+          fi
+
+      - name: Create producer bundle manifest
+        shell: pwsh
+        run: |
+          ./build/release/new-bundle-manifest.ps1 `
+            -PublishDir "artifacts/release/publish" `
+            -Rid "${{ matrix.rid }}" `
+            -ServerVersion "${{ needs.validate.outputs.version }}" `
+            -SourceRevision "${{ github.sha }}" `
+            -OutputPath "artifacts/release/bundle-manifest.json"
+
+      - name: Package asset
+        shell: pwsh
+        run: |
+          ./build/release/pack-release-asset.ps1 `
+            -PublishDir "artifacts/release/publish" `
+            -ManifestPath "artifacts/release/bundle-manifest.json" `
+            -Rid "${{ matrix.rid }}" `
+            -Version "${{ needs.validate.outputs.version }}" `
+            -ArchiveExtension "${{ matrix.archive_ext }}" `
+            -OutputDir "artifacts/release/out"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.rid }}
+          path: artifacts/release/out/*
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    needs: [validate, publish]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Verify release asset set and build SHA256SUMS
+        shell: bash
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          set -euo pipefail
+          cd release-assets
+
+          expected=(
+            "cvolo-language-server-${VERSION}-win-x64.zip"
+            "cvolo-language-server-${VERSION}-linux-x64.tar.gz"
+            "cvolo-language-server-${VERSION}-linux-arm64.tar.gz"
+            "cvolo-language-server-${VERSION}-osx-x64.tar.gz"
+            "cvolo-language-server-${VERSION}-osx-arm64.tar.gz"
+          )
+
+          for file in "${expected[@]}"; do
+            test -f "$file" || { echo "Missing release asset: $file" >&2; exit 1; }
+          done
+
+          archive_count="$(find . -maxdepth 1 -type f \( -name '*.zip' -o -name '*.tar.gz' \) | wc -l)"
+          if [ "$archive_count" -ne 5 ]; then
+            echo "Expected exactly 5 archives, got $archive_count." >&2
+            exit 1
+          fi
+
+          : > SHA256SUMS
+          for file in "${expected[@]}"; do
+            sha256sum "$file" >> SHA256SUMS
+          done
+
+      - name: Create GitHub prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.validate.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create "${GITHUB_REF_NAME}" \
+            release-assets/cvolo-language-server-* \
+            release-assets/SHA256SUMS \
+            --verify-tag \
+            --prerelease \
+            --generate-notes \
+            --title "Cvolo Language Server ${VERSION}"
