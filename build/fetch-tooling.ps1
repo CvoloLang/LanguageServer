@@ -70,14 +70,17 @@ $toolingDll = Join-Path $bundleDir 'Cvolo.Compiler.Tooling.dll'
 # Verification
 # ---------------------------------------------------------------------------
 function Test-Checksums([string]$dir, [string]$sumsPath) {
+    $script:CheckReason = $null
     try {
         # Reject BOM and CRLF: canonical SHA256SUMS.txt is UTF-8 without BOM,
         # LF-only. (Get-Content below would silently normalize both away.)
         $sumsBytes = [System.IO.File]::ReadAllBytes($sumsPath)
         if ($sumsBytes.Length -ge 3 -and $sumsBytes[0] -eq 0xEF -and $sumsBytes[1] -eq 0xBB -and $sumsBytes[2] -eq 0xBF) {
+            $script:CheckReason = 'SHA256SUMS.txt has a UTF-8 BOM'
             return $false
         }
         if ([Array]::IndexOf($sumsBytes, [byte]0x0D) -ge 0) {
+            $script:CheckReason = 'SHA256SUMS.txt contains CR bytes (must be LF-only)'
             return $false
         }
         # Strict canonical SHA256SUMS.txt format (compiler-generated, e.g.
@@ -90,44 +93,72 @@ function Test-Checksums([string]$dir, [string]$sumsPath) {
         $previousPath = $null
         foreach ($line in (Get-Content -LiteralPath $sumsPath)) {
             if ($line -notmatch '^[0-9a-f]{64}  [^ ].*$') {
+                $script:CheckReason = "SHA256SUMS.txt line is not canonical: '$line'"
                 return $false
             }
             $hash = $line.Substring(0, 64)
             $rel = $line.Substring(66)
             if ($rel.Contains('\') -or $rel.StartsWith('./') -or $rel.StartsWith('../')) {
+                $script:CheckReason = "SHA256SUMS.txt path is not canonical: '$rel'"
                 return $false
             }
             # Ordinal entry order: every path must be strictly greater than the previous one.
             if ($null -ne $previousPath -and [string]::CompareOrdinal($rel, $previousPath) -le 0) {
+                $script:CheckReason = "SHA256SUMS.txt entries are not strictly ordinal-sorted at '$rel'"
                 return $false
             }
             $previousPath = $rel
             $expected.Add($rel)
             $ordinalLookup[$rel] = $hash
         }
-        $sums = Get-ChildItem -LiteralPath (Split-Path -Parent $sumsPath) -Recurse -File |
+        # Canonicalize the directory through the filesystem so its form matches
+        # the FullName reported by Get-ChildItem. A short (8.3) artifacts root
+        # would otherwise make the prefix-length relative path computation wrong.
+        $sumsDir = (Get-Item -LiteralPath (Split-Path -Parent $sumsPath)).FullName
+        $sums = Get-ChildItem -LiteralPath $sumsDir -Recurse -File |
             Where-Object { $_.Name -ne 'SHA256SUMS.txt' }
-        if ($sums.Count -ne $expected.Count) { return $false }
+        if ($sums.Count -ne $expected.Count) {
+            $script:CheckReason = "file count mismatch: on disk $($sums.Count), listed $($expected.Count)"
+            return $false
+        }
         foreach ($file in $sums) {
-            $rel = $file.FullName.Substring((Split-Path -Parent $sumsPath).Length).TrimStart('\', '/').Replace('\', '/')
-            if (-not $ordinalLookup.ContainsKey($rel)) { return $false }
+            $rel = $file.FullName.Substring($sumsDir.Length).TrimStart('\', '/').Replace('\', '/')
+            if (-not $ordinalLookup.ContainsKey($rel)) {
+                $script:CheckReason = "on-disk file '$rel' is not listed in SHA256SUMS.txt"
+                return $false
+            }
             $actual = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-            if ($actual -ne $ordinalLookup[$rel]) { return $false }
+            if ($actual -ne $ordinalLookup[$rel]) {
+                $script:CheckReason = "hash mismatch for '$rel'"
+                return $false
+            }
         }
         return $true
     }
-    catch { return $false }
+    catch {
+        $script:CheckReason = "checksum verification threw: $($_.Exception.Message)"
+        return $false
+    }
 }
 
 function Test-CachedBundle {
     if (-not (Test-Path -LiteralPath $sha256SumsFile) -or
         -not (Test-Path -LiteralPath $manifestFile) -or
-        -not (Test-Path -LiteralPath $toolingDll)) { return $false }
+        -not (Test-Path -LiteralPath $toolingDll)) {
+        $script:CheckReason = 'bundle is missing SHA256SUMS.txt, tooling.manifest.json, or Cvolo.Compiler.Tooling.dll'
+        return $false
+    }
     try {
         $manifest = Get-Content -LiteralPath $manifestFile -Raw | ConvertFrom-Json
-        if (-not (Test-ManifestFields $manifest)) { return $false }
+        if (-not (Test-ManifestFields $manifest)) {
+            $script:CheckReason = 'tooling.manifest.json does not satisfy the producer contract'
+            return $false
+        }
     }
-    catch { return $false }
+    catch {
+        $script:CheckReason = "reading tooling.manifest.json threw: $($_.Exception.Message)"
+        return $false
+    }
     return (Test-Checksums $bundleDir $sha256SumsFile)
 }
 
@@ -177,6 +208,7 @@ if (Test-Path -LiteralPath $bundleDir) {
         exit 0
     }
     Write-Err "Tooling cache at $bundleDir exists but is INVALID or conflicting."
+    if ($script:CheckReason) { Write-Err "Reason: $($script:CheckReason)" }
     Write-Err "This process will NOT move it aside, repair it, replace it, or overwrite it."
     Write-Err "Delete or fix the cache manually, then re-run fetch-tooling."
     exit 1
