@@ -51,7 +51,7 @@ fi
 TOOLING_ROOT="$ARTIFACTS_DIR/tooling"
 BUNDLE_DIR="$TOOLING_ROOT/$TOOLING_VERSION"
 PROPS_FILE="$ARTIFACTS_DIR/tooling-dir.props"
-ZIP_URL="https://github.com/IgorShaposhnikov/Cvolo/releases/download/v0.0.4-alpha/CvoloLanguageServerTooling-$TOOLING_VERSION.zip"
+ZIP_URL="https://github.com/IgorShaposhnikov/Cvolo/releases/download/v0.0.5-alpha.1/CvoloLanguageServerTooling-$TOOLING_VERSION.zip"
 
 SHA256_SUMS_FILE="$BUNDLE_DIR/SHA256SUMS.txt"
 MANIFEST_FILE="$BUNDLE_DIR/tooling.manifest.json"

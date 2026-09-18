@@ -59,7 +59,7 @@ $artifactsDir = $ArtifactsRoot
 $toolingRoot = Join-Path $artifactsDir 'tooling'
 $bundleDir = Join-Path $toolingRoot $toolingVersion
 $propsFile = Join-Path $artifactsDir 'tooling-dir.props'
-$zipUrl = "https://github.com/IgorShaposhnikov/Cvolo/releases/download/v0.0.4-alpha/CvoloLanguageServerTooling-$toolingVersion.zip"
+$zipUrl = "https://github.com/IgorShaposhnikov/Cvolo/releases/download/v0.0.5-alpha.1/CvoloLanguageServerTooling-$toolingVersion.zip"
 
 $sha256SumsFile = Join-Path $bundleDir 'SHA256SUMS.txt'
 $manifestFile = Join-Path $bundleDir 'tooling.manifest.json'
