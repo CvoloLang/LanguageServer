@@ -358,6 +358,11 @@ public class TextDocumentSyncHandlerTests : IDisposable
     [Fact]
     public async Task DidOpen_PercentEncodedDriveLetter_OpensDocument()
     {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
         var store = await StartSessionAsync();
         var path = _workspace.PathOf("main.cvl");
         var encoded = new Uri("file:///" + path.Replace('\\', '/').Replace(":", "%3A"));
