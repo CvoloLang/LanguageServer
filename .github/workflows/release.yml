@@ -118,13 +118,12 @@ jobs:
             bash build/fetch-tooling.sh
           fi
 
-      - name: Restore server for RID (locked)
+      - name: Restore server (locked)
         shell: bash
         run: |
           set -euo pipefail
           dotnet restore src/Cvolo.LanguageServer/Cvolo.LanguageServer.csproj \
             --locked-mode \
-            -r "$RID" \
             -p:ContinuousIntegrationBuild=true
 
       - name: Publish self-contained single-file server
