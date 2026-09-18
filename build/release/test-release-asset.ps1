@@ -144,10 +144,10 @@ try {
     if ($versionLines[1] -ne "tooling $ExpectedToolingVersion") { throw "Unexpected tooling version line: $($versionLines[1])" }
     if ($versionLines[2] -ne "compiler-line $ExpectedCompilerLine") { throw "Unexpected compiler line: $($versionLines[2])" }
 
-    $logPath = Join-Path $workspace 'server.log'
+    $logPath = $null
     $process = [Diagnostics.Process]::new()
     $process.StartInfo.FileName = $exe
-    $process.StartInfo.Arguments = "--stdio --log `"$logPath`""
+    $process.StartInfo.Arguments = '--stdio --verbose'
     $process.StartInfo.WorkingDirectory = $stage
     $process.StartInfo.UseShellExecute = $false
     $process.StartInfo.RedirectStandardInput = $true
@@ -207,8 +207,7 @@ try {
 
     $stderrText = $stderrTask.GetAwaiter().GetResult()
     if ($stderrText -match 'Cvolo\.Compiler\.Tooling\.dll is unavailable') { throw "Tooling unavailable warning was emitted: $stderrText" }
-    $logText = if (Test-Path -LiteralPath $logPath) { Get-Content -LiteralPath $logPath -Raw } else { '' }
-    if ($logText -notmatch 'Cvolo\.Compiler\.Tooling .* loaded successfully') { throw "Tooling load success was not logged. log: $logText" }
+    if ($stderrText -notmatch 'Cvolo\.Compiler\.Tooling .* loaded successfully') { throw "Tooling load success was not logged. stderr: $stderrText" }
 
     Write-Output "Release smoke passed for $Rid (server $ExpectedServerVersion, tooling $ExpectedToolingVersion, compiler-line $ExpectedCompilerLine)."
 }
