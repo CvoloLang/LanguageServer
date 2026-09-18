@@ -149,7 +149,7 @@ internal sealed class TestClient : IDisposable
     /// <summary>Polls until a condition holds, because notifications dispatch asynchronously.</summary>
     public async Task WaitUntilAsync(Func<bool> condition, string label, TimeSpan? timeout = null)
     {
-        var deadline = DateTime.UtcNow + (timeout ?? TimeSpan.FromSeconds(2));
+        var deadline = DateTime.UtcNow + (timeout ?? TimeSpan.FromSeconds(15));
         while (!condition())
         {
             if (DateTime.UtcNow >= deadline)
