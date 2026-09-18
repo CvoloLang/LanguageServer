@@ -8,6 +8,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+. (Join-Path $PSScriptRoot 'file-uri.ps1')
+
 # Windows PowerShell 5.1 deadlocks on ReadLineAsync().Wait(); use blocking reads with a
 # native watchdog that kills the child process when the read deadline expires.
 if (-not ('CvoloJsonRpcWatchdog' -as [type])) {
@@ -163,8 +165,17 @@ try {
     $docPath = Join-Path $workspace 'main.cvl'
     Set-Content -LiteralPath $docPath -Value "int Main() {`n    return 0;`n}" -NoNewline
     Set-Content -LiteralPath (Join-Path $workspace 'App.cvlproj') -Value '<Project><ItemGroup /></Project>' -NoNewline
-    $workspaceUri = ([Uri]$workspace).AbsoluteUri
-    $docUri = ([Uri]$docPath).AbsoluteUri
+
+    $workspaceUri = ConvertTo-FileUri -Path $workspace
+    $docUri = ConvertTo-FileUri -Path $docPath
+    foreach ($entry in @(@{ Name = 'workspace'; Uri = $workspaceUri }, @{ Name = 'document'; Uri = $docUri })) {
+        if ($null -eq $entry.Uri) { throw "Release smoke $($entry.Name) URI is null." }
+        if (-not $entry.Uri.IsAbsoluteUri) { throw "Release smoke $($entry.Name) URI is not absolute: '$($entry.Uri)'." }
+        if ($entry.Uri.Scheme -ne [System.Uri]::UriSchemeFile) { throw "Release smoke $($entry.Name) URI scheme is '$($entry.Uri.Scheme)', expected 'file': '$($entry.Uri)'." }
+    }
+
+    $workspaceUriString = $workspaceUri.AbsoluteUri
+    $docUriString = $docUri.AbsoluteUri
 
     Send-JsonRpc $process ([ordered]@{
         jsonrpc = '2.0'
@@ -172,7 +183,7 @@ try {
         method = 'initialize'
         params = [ordered]@{
             processId = $PID
-            workspaceFolders = @([ordered]@{ uri = $workspaceUri; name = 'release-smoke' })
+            workspaceFolders = @([ordered]@{ uri = $workspaceUriString; name = 'release-smoke' })
             capabilities = [ordered]@{}
         }
     })
@@ -182,17 +193,17 @@ try {
     Send-JsonRpc $process ([ordered]@{
         jsonrpc = '2.0'
         method = 'textDocument/didOpen'
-        params = [ordered]@{ textDocument = [ordered]@{ uri = $docUri; languageId = 'cvolo'; version = 1; text = "int Main() {`n    return 0;`n}" } }
+        params = [ordered]@{ textDocument = [ordered]@{ uri = $docUriString; languageId = 'cvolo'; version = 1; text = "int Main() {`n    return 0;`n}" } }
     })
     Send-JsonRpc $process ([ordered]@{
         jsonrpc = '2.0'
         method = 'textDocument/didChange'
-        params = [ordered]@{ textDocument = [ordered]@{ uri = $docUri; version = 2 }; contentChanges = @([ordered]@{ text = 'int Main( { return 0; }' }) }
+        params = [ordered]@{ textDocument = [ordered]@{ uri = $docUriString; version = 2 }; contentChanges = @([ordered]@{ text = 'int Main( { return 0; }' }) }
     })
 
     Wait-ForFrame -reader $stdoutReader -process $process -description 'compiler-backed diagnostics' -predicate {
         param($frame)
-        $frame.method -eq 'textDocument/publishDiagnostics' -and $frame.params.uri -eq $docUri -and @($frame.params.diagnostics).Count -gt 0
+        $frame.method -eq 'textDocument/publishDiagnostics' -and $frame.params.uri -eq $docUriString -and @($frame.params.diagnostics).Count -gt 0
     } | Out-Null
 
     Send-JsonRpc $process ([ordered]@{ jsonrpc = '2.0'; id = 2; method = 'shutdown'; params = $null })
