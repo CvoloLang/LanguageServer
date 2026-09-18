@@ -13,7 +13,7 @@ New-Item -ItemType Directory -Force -Path $stage | Out-Null
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 
 try {
-    Get-ChildItem -LiteralPath $PublishDir -Force | Copy-Item -Destination $stage -Force
+    Get-ChildItem -LiteralPath $PublishDir -Force | Copy-Item -Destination $stage -Recurse -Force
     Copy-Item -LiteralPath $ManifestPath -Destination (Join-Path $stage 'bundle-manifest.json') -Force
 
     $base = "cvolo-language-server-$Version-$Rid"

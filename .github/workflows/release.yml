@@ -126,7 +126,7 @@ jobs:
             --locked-mode \
             -p:ContinuousIntegrationBuild=true
 
-      - name: Publish self-contained single-file server
+      - name: Publish self-contained server
         shell: bash
         run: |
           set -euo pipefail
@@ -147,7 +147,7 @@ jobs:
             -p:Version="$VERSION" \
             -o artifacts/release/publish
 
-      - name: Validate single-file output and smoke --version
+      - name: Validate publish output and smoke --version
         shell: bash
         run: |
           set -euo pipefail
@@ -160,18 +160,7 @@ jobs:
 
           test -f "$exe"
           "$exe" --version
-
-          # Distribution is intentionally single-file. Ignore only files that
-          # the SDK may emit as non-runtime metadata; PDBs are disabled above.
-          unexpected="$(find artifacts/release/publish -maxdepth 1 -type f \
-            ! -name 'cvolo-language-server' \
-            ! -name 'cvolo-language-server.exe' \
-            -print)"
-          if [ -n "$unexpected" ]; then
-            echo "Unexpected files in single-file publish output:" >&2
-            echo "$unexpected" >&2
-            exit 1
-          fi
+          test -f artifacts/release/publish/Cvolo.Compiler.Tooling.dll
 
       - name: Create producer bundle manifest
         shell: pwsh
@@ -193,6 +182,16 @@ jobs:
             -Version "${{ needs.validate.outputs.version }}" `
             -ArchiveExtension "${{ matrix.archive_ext }}" `
             -OutputDir "artifacts/release/out"
+
+      - name: Smoke packaged release asset
+        shell: pwsh
+        run: |
+          ./build/release/test-release-asset.ps1 `
+            -ArchivePath "artifacts/release/out/cvolo-language-server-${{ needs.validate.outputs.version }}-${{ matrix.rid }}.${{ matrix.archive_ext }}" `
+            -Rid "${{ matrix.rid }}" `
+            -ExpectedServerVersion "${{ needs.validate.outputs.version }}" `
+            -ExpectedToolingVersion "$(Select-Xml -Path artifacts/tooling-dir.props -XPath '/Project/PropertyGroup/CvoloToolingVersion' | ForEach-Object { $_.Node.InnerText })" `
+            -ExpectedCompilerLine "$(Select-Xml -Path artifacts/tooling-dir.props -XPath '/Project/PropertyGroup/CompilerCompatLine' | ForEach-Object { $_.Node.InnerText })"
 
       - uses: actions/upload-artifact@v4
         with:

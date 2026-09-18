@@ -53,19 +53,20 @@
     <PackageReference Include="System.CommandLine" />
   </ItemGroup>
 
-  <!--
-    The other tooling bundle assemblies are runtime-only dependencies: the
-    server references only Cvolo.Compiler.Tooling directly and must ship the
-    rest of the bundle beside the executable without compile references.
-  -->
-  <Target Name="CopyToolingRuntimeDeps" AfterTargets="Build" Condition="'$(CvoloToolingDir)' != ''">
+  <!-- Ship the verified pinned tooling bundle beside the executable. The
+       runtime loader resolves Cvolo.Compiler.Tooling.dll from AppContext.BaseDirectory. -->
+  <Target Name="CopyToolingRuntimeDeps" AfterTargets="Build;Publish" Condition="'$(CvoloToolingDir)' != ''">
     <ItemGroup>
-      <_ToolingRuntime Include="$(CvoloToolingDir)\*.dll"
-                       Exclude="$(CvoloToolingDir)\Cvolo.Compiler.Tooling.dll"
-                       Condition="Exists('$(CvoloToolingDir)\*.dll')" />
+      <_ToolingRuntime Include="$(CvoloToolingDir)\**\*"
+                       Condition="Exists('$(CvoloToolingDir)')" />
     </ItemGroup>
     <Copy SourceFiles="@(_ToolingRuntime)"
-          DestinationFolder="$(OutputPath)"
+          DestinationFolder="$(PublishDir)%(RecursiveDir)"
+          Condition="'$(PublishDir)' != ''"
+          SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_ToolingRuntime)"
+          DestinationFolder="$(OutputPath)%(RecursiveDir)"
+          Condition="'$(PublishDir)' == ''"
           SkipUnchangedFiles="true" />
   </Target>
 

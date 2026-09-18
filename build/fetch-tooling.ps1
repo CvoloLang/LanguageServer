@@ -119,7 +119,6 @@ function Test-Checksums([string]$dir, [string]$sumsPath) {
 }
 
 function Test-CachedBundle {
-    if (Test-NativeTooling $bundleDir) { return $true }
     if (-not (Test-Path -LiteralPath $sha256SumsFile) -or
         -not (Test-Path -LiteralPath $manifestFile) -or
         -not (Test-Path -LiteralPath $toolingDll)) { return $false }
@@ -131,11 +130,6 @@ function Test-CachedBundle {
     }
     catch { return $false }
     return (Test-Checksums $bundleDir $sha256SumsFile)
-}
-
-function Test-NativeTooling([string]$dir) {
-    return (Test-Path -LiteralPath (Join-Path $dir 'win-x64/clang.exe')) -or
-        (Test-Path -LiteralPath (Join-Path $dir 'linux-x64/clang'))
 }
 
 # Accept the compiler compatibility line. LSP-0 has no server-side policy yet:
@@ -154,16 +148,6 @@ function Write-Props($manifest) {
     [System.IO.File]::WriteAllText($propsFile, $content, [System.Text.UTF8Encoding]::new($false))
 }
 
-function Write-NativeProps {
-    $content = "<Project>`n  <PropertyGroup>`n" +
-        "    <CvoloToolingVersion>$toolingVersion</CvoloToolingVersion>`n" +
-        "    <CvoloToolingDir>`$(MSBuildThisFileDirectory)tooling/$toolingVersion</CvoloToolingDir>`n" +
-        "    <CompilerCompatLine>0.0</CompilerCompatLine>`n" +
-        "    <CvoloManagedToolingAvailable>false</CvoloManagedToolingAvailable>`n" +
-        "  </PropertyGroup>`n</Project>`n"
-    [System.IO.File]::WriteAllText($propsFile, $content, [System.Text.UTF8Encoding]::new($false))
-}
-
 # ---------------------------------------------------------------------------
 # Reuse an existing valid cache without touching the network. An existing
 # target that is invalid/conflicting is a HARD failure: it is never moved
@@ -175,9 +159,6 @@ if (Test-Path -LiteralPath $bundleDir) {
         if (Test-Path -LiteralPath $manifestFile) {
             $manifest = Get-Content -LiteralPath $manifestFile -Raw | ConvertFrom-Json
             Write-Props $manifest
-        }
-        else {
-            Write-NativeProps
         }
         exit 0
     }
@@ -265,25 +246,21 @@ try {
     $tempManifest = Join-Path $bundleRoot 'tooling.manifest.json'
     $tempDll = Join-Path $bundleRoot 'Cvolo.Compiler.Tooling.dll'
 
-    $nativeTooling = Test-NativeTooling $tempExtract
-    if (-not $nativeTooling -and
-        (-not (Test-Path -LiteralPath $tempSums) -or
+    if ((-not (Test-Path -LiteralPath $tempSums) -or
         -not (Test-Path -LiteralPath $tempManifest) -or
         -not (Test-Path -LiteralPath $tempDll))) {
-        throw "Downloaded bundle is missing required files (native tooling or manifest/checksums/Cvolo.Compiler.Tooling.dll)"
+        throw "Downloaded bundle is missing required files (manifest/checksums/Cvolo.Compiler.Tooling.dll)"
     }
-    if (-not $nativeTooling -and -not (Test-Checksums $bundleRoot $tempSums)) {
+    if (-not (Test-Checksums $bundleRoot $tempSums)) {
         throw "Downloaded bundle failed SHA256 checksum verification"
     }
 
-    if (-not $nativeTooling) {
-        $manifest = Get-Content -LiteralPath $tempManifest -Raw | ConvertFrom-Json
-        if ($manifest.ToolingVersion -ne $toolingVersion) {
-            throw "Manifest ToolingVersion '$($manifest.ToolingVersion)' does not match tooling.version '$toolingVersion'"
-        }
-        if (-not (Test-Compatible ([string]$manifest.CompilerCompatibilityLine))) {
-            throw "Manifest CompilerCompatibilityLine '$($manifest.CompilerCompatibilityLine)' is not accepted"
-        }
+    $manifest = Get-Content -LiteralPath $tempManifest -Raw | ConvertFrom-Json
+    if ($manifest.ToolingVersion -ne $toolingVersion) {
+        throw "Manifest ToolingVersion '$($manifest.ToolingVersion)' does not match tooling.version '$toolingVersion'"
+    }
+    if (-not (Test-Compatible ([string]$manifest.CompilerCompatibilityLine))) {
+        throw "Manifest CompilerCompatibilityLine '$($manifest.CompilerCompatibilityLine)' is not accepted"
     }
 }
 catch {
@@ -308,9 +285,6 @@ function Test-PublishTarget {
             if (Test-Path -LiteralPath $manifestFile) {
                 $concurrentManifest = Get-Content -LiteralPath $manifestFile -Raw | ConvertFrom-Json
                 Write-Props $concurrentManifest
-            }
-            else {
-                Write-NativeProps
             }
             exit 0
         }
@@ -337,12 +311,7 @@ catch {
 }
 Remove-Item -LiteralPath $tempZip -Force -ErrorAction SilentlyContinue
 
-if (Test-Path -LiteralPath $manifestFile) {
-    $manifest = Get-Content -LiteralPath $manifestFile -Raw | ConvertFrom-Json
-    Write-Props $manifest
-}
-else {
-    Write-NativeProps
-}
+$manifest = Get-Content -LiteralPath $manifestFile -Raw | ConvertFrom-Json
+Write-Props $manifest
 Write-Info "Provisioned verified tooling $toolingVersion at $bundleDir"
 exit 0
