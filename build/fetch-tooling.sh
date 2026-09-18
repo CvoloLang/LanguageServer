@@ -61,6 +61,18 @@ TOOLING_DLL="$BUNDLE_DIR/Cvolo.Compiler.Tooling.dll"
 # ---------------------------------------------------------------------------
 # Verification helpers
 # ---------------------------------------------------------------------------
+# $1 = file path. Portable SHA-256: GNU coreutils (Linux) provides sha256sum,
+# macOS ships shasum, and minimal images may only have openssl.
+sha256_file() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | awk '{print $1}'
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$1" | awk '{print $1}'
+    else
+        openssl dgst -sha256 "$1" | awk '{print $NF}'
+    fi
+}
+
 # $1 = bundle dir, $2 = sums file path
 verify_checksums() {
     local dir="$1" sums="$2"
@@ -108,7 +120,7 @@ verify_checksums() {
     local actual
     for ((i = 0; i < count; i++)); do
         [ -f "$dir/${paths[i]}" ] || return 1
-        actual="$(sha256sum "$dir/${paths[i]}" | awk '{print $1}')" || return 1
+        actual="$(sha256_file "$dir/${paths[i]}")" || return 1
         [ "$actual" = "${hashes[i]}" ] || return 1
     done
 
@@ -246,7 +258,7 @@ if ! [[ "$EXPECTED_ZIP_HASH" =~ ^[0-9a-f]{64}$ ]]; then
     rm -f "$TEMP_ZIP"; rm -f "$TEMP_SHA"
     exit 1
 fi
-ACTUAL_ZIP_HASH="$(sha256sum "$TEMP_ZIP" | awk '{print $1}')"
+ACTUAL_ZIP_HASH="$(sha256_file "$TEMP_ZIP")"
 if [ "$ACTUAL_ZIP_HASH" != "$EXPECTED_ZIP_HASH" ]; then
     err "Downloaded tooling archive does not match the published checksum asset."
     err "  expected: $EXPECTED_ZIP_HASH"

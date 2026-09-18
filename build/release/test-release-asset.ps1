@@ -63,7 +63,6 @@ function Read-JsonRpcFrame([IO.StreamReader]$reader, [Diagnostics.Process]$proce
         while ($true) {
             $line = $reader.ReadLine()
             if ($null -eq $line) {
-                if ($watchdog.TimedOut) { throw 'Timed out reading JSON-RPC frame header' }
                 return $null
             }
             if ($line -eq '') { break }
@@ -77,14 +76,15 @@ function Read-JsonRpcFrame([IO.StreamReader]$reader, [Diagnostics.Process]$proce
         while ($read -lt $length) {
             $count = $reader.Read($buffer, $read, $length - $read)
             if ($count -le 0) {
-                if ($watchdog.TimedOut) { throw 'Timed out reading JSON-RPC frame body' }
                 return $null
             }
             $read += $count
         }
 
         $body = -join $buffer
-        return ($body | ConvertFrom-Json)
+        $frame = $body | ConvertFrom-Json
+        Write-Host ("[smoke] frame id={0} method={1}" -f $frame.id, $frame.method)
+        return $frame
     }
     finally {
         $watchdog.Dispose()
@@ -110,6 +110,8 @@ $stage = Join-Path ([IO.Path]::GetTempPath()) ("cvolo-ls-smoke-" + [guid]::NewGu
 $workspace = Join-Path ([IO.Path]::GetTempPath()) ("cvolo-ls-workspace-" + [guid]::NewGuid().ToString('N'))
 
 $process = $null
+$logPath = $null
+$stderrTask = $null
 try {
     New-Item -ItemType Directory -Force -Path $stage, $workspace | Out-Null
     if ($archive.EndsWith('.zip', [StringComparison]::OrdinalIgnoreCase)) {
@@ -209,6 +211,15 @@ try {
     if ($logText -notmatch 'Cvolo\.Compiler\.Tooling .* loaded successfully') { throw "Tooling load success was not logged. log: $logText" }
 
     Write-Output "Release smoke passed for $Rid (server $ExpectedServerVersion, tooling $ExpectedToolingVersion, compiler-line $ExpectedCompilerLine)."
+}
+catch {
+    if ($null -ne $process) {
+        try { if (-not $process.HasExited) { $process.Kill() } } catch { }
+    }
+    $capturedLog = if ($logPath -and (Test-Path -LiteralPath $logPath)) { Get-Content -LiteralPath $logPath -Raw } else { '(no log file)' }
+    $capturedErr = ''
+    if ($null -ne $stderrTask) { try { $capturedErr = $stderrTask.GetAwaiter().GetResult() } catch { } }
+    throw "$_`n--- server log ---`n$capturedLog`n--- server stderr ---`n$capturedErr"
 }
 finally {
     if ($null -ne $process) {
