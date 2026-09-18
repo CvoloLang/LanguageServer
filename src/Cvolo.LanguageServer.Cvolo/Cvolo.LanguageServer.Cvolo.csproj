@@ -1,11 +1,5 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-  </PropertyGroup>
-
   <!-- Tooling location is produced by build/fetch-tooling.ps1|.sh. -->
   <Import Project="$(MSBuildThisFileDirectory)..\..\artifacts\tooling-dir.props"
           Condition="Exists('$(MSBuildThisFileDirectory)..\..\artifacts\tooling-dir.props')" />
