@@ -257,4 +257,4 @@ jobs:
             --verify-tag \
             --prerelease \
             --generate-notes \
-            --title "Cvolo Language Server ${VERSION}"
+            --title "LSP ${GITHUB_REF_NAME}"
