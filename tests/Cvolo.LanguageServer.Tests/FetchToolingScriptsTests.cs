@@ -40,7 +40,7 @@ public class FetchToolingScriptsTests
     {
         var manifest =
             $"{{\"ToolingVersion\":\"{toolingVersion}\",\"CompilerCompatibilityLine\":\"{compatLine}\"," +
-            "\"BuiltFromCompilerVersion\":\"0.0.4\",\"TargetFramework\":\"net10.0\",\"Commit\":\"test\"}";
+            "\"BuiltFromCompilerVersion\":\"0.0.4\",\"TargetFramework\":\"net10.0\",\"RuntimeIdentifier\":null,\"Commit\":\"test\"}";
         File.WriteAllText(Path.Combine(bundleDir, "tooling.manifest.json"), manifest, new UTF8Encoding(false));
     }
 

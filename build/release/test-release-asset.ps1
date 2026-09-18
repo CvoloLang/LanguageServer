@@ -8,6 +8,41 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# Windows PowerShell 5.1 deadlocks on ReadLineAsync().Wait(); use blocking reads with a
+# native watchdog that kills the child process when the read deadline expires.
+if (-not ('CvoloJsonRpcWatchdog' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.Diagnostics;
+using System.Threading;
+
+public sealed class CvoloJsonRpcWatchdog : IDisposable
+{
+    private readonly Timer _timer;
+    private readonly int _processId;
+
+    public bool TimedOut { get; private set; }
+
+    public CvoloJsonRpcWatchdog(int processId, int timeoutMs)
+    {
+        _processId = processId;
+        _timer = new Timer(OnElapsed, null, timeoutMs, Timeout.Infinite);
+    }
+
+    private void OnElapsed(object state)
+    {
+        TimedOut = true;
+        try { Process.GetProcessById(_processId).Kill(); } catch { }
+    }
+
+    public void Dispose()
+    {
+        try { _timer.Dispose(); } catch { }
+    }
+}
+'@
+}
+
 function ConvertTo-JsonBytes([object]$value) {
     $json = $value | ConvertTo-Json -Depth 20 -Compress
     [Text.Encoding]::UTF8.GetBytes($json)
@@ -21,45 +56,60 @@ function Send-JsonRpc([object]$process, [object]$message) {
     $process.StandardInput.BaseStream.Flush()
 }
 
-function Get-JsonRpcFrames([string]$text) {
-    $text = $text.Replace("`r`n", "`n")
-    $frames = @()
-    $offset = 0
-    while ($true) {
-        $headerEnd = $text.IndexOf("`n`n", $offset, [StringComparison]::Ordinal)
-        if ($headerEnd -lt 0) { break }
-
-        $header = $text.Substring($offset, $headerEnd - $offset)
-        if ($header -notmatch '(?im)^Content-Length:\s*(\d+)\s*$') {
-            throw "Malformed JSON-RPC frame header: $header"
+function Read-JsonRpcFrame([IO.StreamReader]$reader, [Diagnostics.Process]$process, [int]$TimeoutMs) {
+    $watchdog = [CvoloJsonRpcWatchdog]::new($process.Id, $TimeoutMs)
+    try {
+        $length = -1
+        while ($true) {
+            $line = $reader.ReadLine()
+            if ($null -eq $line) {
+                if ($watchdog.TimedOut) { throw 'Timed out reading JSON-RPC frame header' }
+                return $null
+            }
+            if ($line -eq '') { break }
+            if ($line -match '(?i)^Content-Length:\s*(\d+)\s*$') { $length = [int]$Matches[1] }
         }
 
-        $length = [int]$Matches[1]
-        $bodyStart = $headerEnd + 2
-        if ($text.Length -lt $bodyStart + $length) { break }
+        if ($length -lt 0) { throw 'JSON-RPC frame is missing a Content-Length header' }
 
-        $body = $text.Substring($bodyStart, $length)
-        $frames += ($body | ConvertFrom-Json)
-        $offset = $bodyStart + $length
+        $buffer = New-Object 'char[]' $length
+        $read = 0
+        while ($read -lt $length) {
+            $count = $reader.Read($buffer, $read, $length - $read)
+            if ($count -le 0) {
+                if ($watchdog.TimedOut) { throw 'Timed out reading JSON-RPC frame body' }
+                return $null
+            }
+            $read += $count
+        }
+
+        $body = -join $buffer
+        return ($body | ConvertFrom-Json)
     }
-
-    return $frames
+    finally {
+        $watchdog.Dispose()
+    }
 }
 
-function Wait-Until([scriptblock]$Predicate, [string]$Description, [int]$TimeoutSeconds = 10) {
+function Wait-ForFrame([IO.StreamReader]$reader, [Diagnostics.Process]$process, [scriptblock]$predicate, [string]$description, [int]$TimeoutSeconds = 30) {
     $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
-    while ([DateTime]::UtcNow -lt $deadline) {
-        $result = & $Predicate
-        if ($result) { return $result }
-        Start-Sleep -Milliseconds 100
+    while ($true) {
+        $remaining = [int](($deadline - [DateTime]::UtcNow).TotalMilliseconds)
+        if ($remaining -le 0) { break }
+
+        $frame = Read-JsonRpcFrame -reader $reader -process $process -TimeoutMs $remaining
+        if ($null -eq $frame) { break }
+        if (& $predicate $frame) { return $frame }
     }
-    throw "Timed out waiting for $Description"
+
+    throw "Timed out waiting for $description"
 }
 
 $archive = (Resolve-Path -LiteralPath $ArchivePath).Path
 $stage = Join-Path ([IO.Path]::GetTempPath()) ("cvolo-ls-smoke-" + [guid]::NewGuid().ToString('N'))
 $workspace = Join-Path ([IO.Path]::GetTempPath()) ("cvolo-ls-workspace-" + [guid]::NewGuid().ToString('N'))
 
+$process = $null
 try {
     New-Item -ItemType Directory -Force -Path $stage, $workspace | Out-Null
     if ($archive.EndsWith('.zip', [StringComparison]::OrdinalIgnoreCase)) {
@@ -92,26 +142,25 @@ try {
     if ($versionLines[1] -ne "tooling $ExpectedToolingVersion") { throw "Unexpected tooling version line: $($versionLines[1])" }
     if ($versionLines[2] -ne "compiler-line $ExpectedCompilerLine") { throw "Unexpected compiler line: $($versionLines[2])" }
 
-    $stdout = [Text.StringBuilder]::new()
-    $stderr = [Text.StringBuilder]::new()
+    $logPath = Join-Path $workspace 'server.log'
     $process = [Diagnostics.Process]::new()
     $process.StartInfo.FileName = $exe
-    $process.StartInfo.Arguments = '--stdio'
+    $process.StartInfo.Arguments = "--stdio --log `"$logPath`""
     $process.StartInfo.WorkingDirectory = $stage
     $process.StartInfo.UseShellExecute = $false
     $process.StartInfo.RedirectStandardInput = $true
     $process.StartInfo.RedirectStandardOutput = $true
     $process.StartInfo.RedirectStandardError = $true
-    $process.EnableRaisingEvents = $true
-    $process.add_OutputDataReceived({ if ($null -ne $EventArgs.Data) { [void]$stdout.AppendLine($EventArgs.Data) } })
-    $process.add_ErrorDataReceived({ if ($null -ne $EventArgs.Data) { [void]$stderr.AppendLine($EventArgs.Data) } })
+    $process.StartInfo.CreateNoWindow = $true
 
     if (-not $process.Start()) { throw 'Failed to start packaged language server' }
-    $process.BeginOutputReadLine()
-    $process.BeginErrorReadLine()
+
+    $stdoutReader = [IO.StreamReader]::new($process.StandardOutput.BaseStream)
+    $stderrTask = $process.StandardError.ReadToEndAsync()
 
     $docPath = Join-Path $workspace 'main.cvl'
     Set-Content -LiteralPath $docPath -Value "int Main() {`n    return 0;`n}" -NoNewline
+    Set-Content -LiteralPath (Join-Path $workspace 'App.cvlproj') -Value '<Project><ItemGroup /></Project>' -NoNewline
     $workspaceUri = ([Uri]$workspace).AbsoluteUri
     $docUri = ([Uri]$docPath).AbsoluteUri
 
@@ -126,41 +175,46 @@ try {
         }
     })
 
-    Wait-Until { @(Get-JsonRpcFrames $stdout.ToString() | Where-Object { $_.id -eq 1 }).Count -gt 0 } 'initialize response' | Out-Null
+    Wait-ForFrame -reader $stdoutReader -process $process -description 'initialize response' -predicate { param($frame) $frame.id -eq 1 } | Out-Null
     Send-JsonRpc $process ([ordered]@{ jsonrpc = '2.0'; method = 'initialized'; params = [ordered]@{} })
     Send-JsonRpc $process ([ordered]@{
         jsonrpc = '2.0'
         method = 'textDocument/didOpen'
         params = [ordered]@{ textDocument = [ordered]@{ uri = $docUri; languageId = 'cvolo'; version = 1; text = "int Main() {`n    return 0;`n}" } }
     })
-
     Send-JsonRpc $process ([ordered]@{
         jsonrpc = '2.0'
         method = 'textDocument/didChange'
         params = [ordered]@{ textDocument = [ordered]@{ uri = $docUri; version = 2 }; contentChanges = @([ordered]@{ text = 'int Main( { return 0; }' }) }
     })
 
-    Wait-Until {
-        $frames = Get-JsonRpcFrames $stdout.ToString()
-        $diagnostics = @($frames | Where-Object { $_.method -eq 'textDocument/publishDiagnostics' -and $_.params.uri -eq $docUri -and @($_.params.diagnostics).Count -gt 0 })
-        $diagnostics.Count -gt 0
-    } 'compiler-backed diagnostics' | Out-Null
+    Wait-ForFrame -reader $stdoutReader -process $process -description 'compiler-backed diagnostics' -predicate {
+        param($frame)
+        $frame.method -eq 'textDocument/publishDiagnostics' -and $frame.params.uri -eq $docUri -and @($frame.params.diagnostics).Count -gt 0
+    } | Out-Null
 
     Send-JsonRpc $process ([ordered]@{ jsonrpc = '2.0'; id = 2; method = 'shutdown'; params = $null })
-    Wait-Until { @(Get-JsonRpcFrames $stdout.ToString() | Where-Object { $_.id -eq 2 }).Count -gt 0 } 'shutdown response' | Out-Null
+    Wait-ForFrame -reader $stdoutReader -process $process -description 'shutdown response' -predicate { param($frame) $frame.id -eq 2 } | Out-Null
     Send-JsonRpc $process ([ordered]@{ jsonrpc = '2.0'; method = 'exit'; params = $null })
 
     if (-not $process.WaitForExit(10000)) {
-        $process.Kill($true)
+        try { $process.Kill() } catch { }
         throw 'Packaged language server did not exit after shutdown/exit'
     }
-    if ($process.ExitCode -ne 0) { throw "Packaged language server exited with $($process.ExitCode). stderr: $stderr" }
+    if ($process.ExitCode -ne 0) { throw "Packaged language server exited with $($process.ExitCode)." }
 
-    $stderrText = $stderr.ToString()
+    $stderrText = $stderrTask.GetAwaiter().GetResult()
     if ($stderrText -match 'Cvolo\.Compiler\.Tooling\.dll is unavailable') { throw "Tooling unavailable warning was emitted: $stderrText" }
-    if ($stderrText -notmatch 'Cvolo\.Compiler\.Tooling .* loaded successfully') { throw "Tooling load success was not logged. stderr: $stderrText" }
+    $logText = if (Test-Path -LiteralPath $logPath) { Get-Content -LiteralPath $logPath -Raw } else { '' }
+    if ($logText -notmatch 'Cvolo\.Compiler\.Tooling .* loaded successfully') { throw "Tooling load success was not logged. log: $logText" }
+
+    Write-Output "Release smoke passed for $Rid (server $ExpectedServerVersion, tooling $ExpectedToolingVersion, compiler-line $ExpectedCompilerLine)."
 }
 finally {
+    if ($null -ne $process) {
+        try { if (-not $process.HasExited) { $process.Kill() } } catch { }
+        try { $process.Dispose() } catch { }
+    }
     Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $workspace -Recurse -Force -ErrorAction SilentlyContinue
 }

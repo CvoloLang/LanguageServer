@@ -160,7 +160,16 @@ jobs:
 
           test -f "$exe"
           "$exe" --version
-          test -f artifacts/release/publish/Cvolo.Compiler.Tooling.dll
+
+          tooling_version="$(sed -n 's:.*<CvoloToolingVersion>\(.*\)</CvoloToolingVersion>.*:\1:p' artifacts/tooling-dir.props)"
+          test -n "$tooling_version"
+          tooling_dir="artifacts/tooling/$tooling_version"
+          test -d "$tooling_dir"
+          while IFS= read -r -d '' tooling_file; do
+            relative="${tooling_file#"$tooling_dir"/}"
+            test -f "artifacts/release/publish/$relative"
+          done < <(find "$tooling_dir" -type f -print0)
+          echo "Verified complete tooling payload for $tooling_version in publish output."
 
       - name: Create producer bundle manifest
         shell: pwsh

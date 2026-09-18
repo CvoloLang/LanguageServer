@@ -60,6 +60,7 @@ $toolingRoot = Join-Path $artifactsDir 'tooling'
 $bundleDir = Join-Path $toolingRoot $toolingVersion
 $propsFile = Join-Path $artifactsDir 'tooling-dir.props'
 $zipUrl = "https://github.com/IgorShaposhnikov/Cvolo/releases/download/tooling-$toolingVersion/CvoloLanguageServerTooling-$toolingVersion.zip"
+$zipShaUrl = "$zipUrl.sha256"
 
 $sha256SumsFile = Join-Path $bundleDir 'SHA256SUMS.txt'
 $manifestFile = Join-Path $bundleDir 'tooling.manifest.json'
@@ -124,9 +125,7 @@ function Test-CachedBundle {
         -not (Test-Path -LiteralPath $toolingDll)) { return $false }
     try {
         $manifest = Get-Content -LiteralPath $manifestFile -Raw | ConvertFrom-Json
-        if ($manifest.ToolingVersion -ne $toolingVersion) { return $false }
-        if ([string]::IsNullOrWhiteSpace($manifest.CompilerCompatibilityLine)) { return $false }
-        if ($manifest.CompilerCompatibilityLine -notmatch '^\d+\.\d+(\.\d+)*$') { return $false }
+        if (-not (Test-ManifestFields $manifest)) { return $false }
     }
     catch { return $false }
     return (Test-Checksums $bundleDir $sha256SumsFile)
@@ -137,6 +136,21 @@ function Test-CachedBundle {
 # the build through the generated props so later increments can gate on it.
 function Test-Compatible([string]$line) {
     return $line -match '^\d+\.\d+(\.\d+)*$'
+}
+
+# The producer manifest contract: version identity, compiler compatibility line,
+# the compiler revision it was built from, its target framework, RID-neutrality
+# (RuntimeIdentifier must be null), and an immutable source commit.
+function Test-ManifestFields($manifest) {
+    if ($manifest.ToolingVersion -ne $toolingVersion) { return $false }
+    if ([string]::IsNullOrWhiteSpace([string]$manifest.CompilerCompatibilityLine)) { return $false }
+    if ([string]$manifest.CompilerCompatibilityLine -notmatch '^\d+\.\d+(\.\d+)*$') { return $false }
+    if ([string]::IsNullOrWhiteSpace([string]$manifest.BuiltFromCompilerVersion)) { return $false }
+    if ([string]::IsNullOrWhiteSpace([string]$manifest.TargetFramework)) { return $false }
+    if (-not ($manifest.PSObject.Properties.Name -contains 'RuntimeIdentifier')) { return $false }
+    if ($null -ne $manifest.RuntimeIdentifier) { return $false }
+    if ([string]::IsNullOrWhiteSpace([string]$manifest.Commit)) { return $false }
+    return $true
 }
 
 function Write-Props($manifest) {
@@ -173,6 +187,7 @@ if (Test-Path -LiteralPath $bundleDir) {
 # ---------------------------------------------------------------------------
 $pidSuffix = $PID
 $tempZip = Join-Path $toolingRoot ".tmp-$toolingVersion-$pidSuffix.zip"
+$tempSha = Join-Path $toolingRoot ".tmp-$toolingVersion-$pidSuffix.zip.sha256"
 $tempExtract = Join-Path $toolingRoot ".tmp-$toolingVersion-$pidSuffix"
 
 New-Item -ItemType Directory -Path $toolingRoot -Force | Out-Null
@@ -198,35 +213,55 @@ function Download-Bundle {
     }
 }
 
-$downloaded = $false
-$permanentError = $null
-for ($attempt = 1; $attempt -le 4; $attempt++) {
-    try {
-        Write-Info "Downloading $zipUrl (attempt $attempt/4)"
-        Download-Bundle $zipUrl $tempZip
-        $downloaded = $true
-        break
-    }
-    catch {
-        if ($_.Message -like 'PermanentlyUnavailable*') {
-            $permanentError = $_.Message
-            break
+function Get-RemoteFile {
+    param([string]$url, [string]$dest, [string]$label)
+    for ($attempt = 1; $attempt -le 4; $attempt++) {
+        try {
+            Write-Info "Downloading $label (attempt $attempt/4): $url"
+            Download-Bundle $url $dest
+            return $true
         }
-        Write-Err "Download failed: $($_.Message)"
-        if ($attempt -lt 4) {
-            Start-Sleep -Seconds 2
+        catch {
+            if ($_.Message -like 'PermanentlyUnavailable*') {
+                Write-Err "Tooling $toolingVersion is not available at $url (HTTP 4xx, permanent)."
+                Write-Err "No retries were attempted and no fallback version or unverified cache is used."
+                return $false
+            }
+            Write-Err "Download failed: $($_.Message)"
+            if ($attempt -lt 4) {
+                Start-Sleep -Seconds 2
+            }
         }
     }
+    return $false
 }
 
-if (-not $downloaded) {
-    if ($null -ne $permanentError) {
-        Write-Err "Tooling $toolingVersion is not available at $zipUrl (HTTP 4xx, permanent)."
-        Write-Err "No retries were attempted and no fallback version or unverified cache is used."
-    }
-    else {
-        Write-Err "Tooling $toolingVersion could not be fetched from $zipUrl after retries."
-    }
+if (-not (Get-RemoteFile $zipUrl $tempZip 'tooling archive')) {
+    exit 1
+}
+
+# Verify the downloaded archive against the published .sha256 sidecar asset
+# BEFORE it is extracted or used. No unverified fallback is permitted.
+if (-not (Get-RemoteFile $zipShaUrl $tempSha 'tooling archive checksum')) {
+    Remove-Item -LiteralPath $tempZip -Force -ErrorAction SilentlyContinue
+    exit 1
+}
+
+$shaMatch = [regex]::Match((Get-Content -LiteralPath $tempSha -Raw).Trim(), '^([0-9a-fA-F]{64})')
+if (-not $shaMatch.Success) {
+    Write-Err "Published checksum asset $zipShaUrl is malformed."
+    Remove-Item -LiteralPath $tempZip -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $tempSha -Force -ErrorAction SilentlyContinue
+    exit 1
+}
+$expectedZipHash = $shaMatch.Groups[1].Value.ToLowerInvariant()
+$actualZipHash = (Get-FileHash -LiteralPath $tempZip -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($actualZipHash -ne $expectedZipHash) {
+    Write-Err "Downloaded tooling archive does not match the published checksum asset."
+    Write-Err "  expected: $expectedZipHash"
+    Write-Err "  actual:   $actualZipHash"
+    Remove-Item -LiteralPath $tempZip -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $tempSha -Force -ErrorAction SilentlyContinue
     exit 1
 }
 
@@ -256,16 +291,14 @@ try {
     }
 
     $manifest = Get-Content -LiteralPath $tempManifest -Raw | ConvertFrom-Json
-    if ($manifest.ToolingVersion -ne $toolingVersion) {
-        throw "Manifest ToolingVersion '$($manifest.ToolingVersion)' does not match tooling.version '$toolingVersion'"
-    }
-    if (-not (Test-Compatible ([string]$manifest.CompilerCompatibilityLine))) {
-        throw "Manifest CompilerCompatibilityLine '$($manifest.CompilerCompatibilityLine)' is not accepted"
+    if (-not (Test-ManifestFields $manifest)) {
+        throw "Manifest does not satisfy the producer contract (ToolingVersion/CompilerCompatibilityLine/BuiltFromCompilerVersion/TargetFramework/RuntimeIdentifier/Commit)"
     }
 }
 catch {
     Write-Err "Tooling bundle is unusable: $($_.Exception.Message)"
     Remove-Item -LiteralPath $tempZip -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $tempSha -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $tempExtract -Recurse -Force -ErrorAction SilentlyContinue
     exit 1
 }
@@ -281,6 +314,7 @@ function Test-PublishTarget {
         if (Test-CachedBundle) {
             Write-Info "Another process provisioned a verified cache; reusing $bundleDir"
             Remove-Item -LiteralPath $tempZip -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath $tempSha -Force -ErrorAction SilentlyContinue
             Remove-Item -LiteralPath $tempExtract -Recurse -Force -ErrorAction SilentlyContinue
             if (Test-Path -LiteralPath $manifestFile) {
                 $concurrentManifest = Get-Content -LiteralPath $manifestFile -Raw | ConvertFrom-Json
@@ -292,6 +326,7 @@ function Test-PublishTarget {
         Write-Err "This process did NOT move it aside, repair it, replace it, or overwrite it."
         Write-Err "Re-run fetch-tooling after the conflict is resolved."
         Remove-Item -LiteralPath $tempZip -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $tempSha -Force -ErrorAction SilentlyContinue
         Remove-Item -LiteralPath $tempExtract -Recurse -Force -ErrorAction SilentlyContinue
         exit 1
     }
@@ -306,10 +341,12 @@ catch {
     Test-PublishTarget
     Write-Err "Concurrent tooling provisioning could not be resolved: $($_.Exception.Message)"
     Remove-Item -LiteralPath $tempZip -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $tempSha -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $tempExtract -Recurse -Force -ErrorAction SilentlyContinue
     exit 1
 }
 Remove-Item -LiteralPath $tempZip -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath $tempSha -Force -ErrorAction SilentlyContinue
 
 $manifest = Get-Content -LiteralPath $manifestFile -Raw | ConvertFrom-Json
 Write-Props $manifest
