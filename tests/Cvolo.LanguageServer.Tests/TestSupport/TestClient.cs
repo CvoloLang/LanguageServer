@@ -156,6 +156,14 @@ internal sealed class TestClient : IDisposable
             new global::Cvolo.LanguageServer.Protocol.SemanticTokensParams { TextDocument = new TextDocumentIdentifier { Uri = uri } });
     }
 
+    public Task<JObject?> SemanticTokensWithTokenAsync(Uri uri, CancellationToken cancellationToken)
+    {
+        return _rpc.InvokeWithParameterObjectAsync<JObject?>(
+            "textDocument/semanticTokens/full",
+            new global::Cvolo.LanguageServer.Protocol.SemanticTokensParams { TextDocument = new TextDocumentIdentifier { Uri = uri } },
+            cancellationToken);
+    }
+
     public Task<Hover?> HoverWithTokenAsync(Uri uri, int line, int character, CancellationToken cancellationToken)
     {
         return _rpc.InvokeWithParameterObjectAsync<Hover?>(

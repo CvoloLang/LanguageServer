@@ -177,8 +177,12 @@ internal sealed class BlockingBackend : ILanguageBackend
 
     public BackendSemanticTokenResult GetSemanticTokens(BackendSnapshot snapshot, BackendDocumentHandle document)
     {
-        return new BackendSemanticTokenResult([]);
+        EnterNavigation();
+        return CannedSemanticTokens;
     }
+
+    /// <summary>The semantic-token result returned by <see cref="GetSemanticTokens"/>.</summary>
+    public BackendSemanticTokenResult CannedSemanticTokens { get; set; } = new([]);
 
     private void EnterNavigation()
     {
