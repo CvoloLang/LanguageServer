@@ -27,6 +27,28 @@ internal sealed record ServerCapabilities
     public bool? DefinitionProvider { get; init; }
 
     public bool? DocumentSymbolProvider { get; init; }
+
+    public SemanticTokensOptions? SemanticTokensProvider { get; init; }
+}
+
+/// <summary>
+/// LSP 3.17 <c>semanticTokensProvider</c> options. Defined locally so the pinned protocol model's
+/// shape cannot drop the negotiated legend or the <c>range: false</c> flag.
+/// </summary>
+internal sealed record SemanticTokensOptions
+{
+    public SemanticTokensLegend? Legend { get; init; }
+
+    public bool? Full { get; init; }
+
+    public bool? Range { get; init; }
+}
+
+internal sealed record SemanticTokensLegend
+{
+    public string[]? TokenTypes { get; init; }
+
+    public string[]? TokenModifiers { get; init; }
 }
 
 /// <summary>
@@ -44,6 +66,19 @@ internal sealed record CompletionOptions
 /// LSP 3.17 <c>ServerInfo</c>.
 /// </summary>
 internal sealed record ServerInfo(string Name, string Version);
+
+/// <summary>
+/// Params for <c>textDocument/semanticTokens/full</c>.
+/// </summary>
+internal sealed class SemanticTokensParams
+{
+    public TextDocumentIdentifier? TextDocument { get; init; }
+}
+
+/// <summary>
+/// Result for <c>textDocument/semanticTokens/full</c>: the relative-encoded token stream.
+/// </summary>
+internal sealed record SemanticTokensResponse(int[] Data);
 
 /// <summary>
 /// Params for the <c>$/setTrace</c> notification.
@@ -73,6 +108,18 @@ internal sealed class InitializeRequestParams
 internal sealed class ClientCapabilitiesPayload
 {
     public TextDocumentClientCapabilitiesPayload? TextDocument { get; init; }
+
+    public WorkspaceClientCapabilitiesPayload? Workspace { get; init; }
+}
+
+internal sealed class WorkspaceClientCapabilitiesPayload
+{
+    public SemanticTokensWorkspaceClientCapabilitiesPayload? SemanticTokens { get; init; }
+}
+
+internal sealed class SemanticTokensWorkspaceClientCapabilitiesPayload
+{
+    public bool? RefreshSupport { get; init; }
 }
 
 internal sealed class TextDocumentClientCapabilitiesPayload
@@ -82,6 +129,33 @@ internal sealed class TextDocumentClientCapabilitiesPayload
     public HoverClientCapabilitiesPayload? Hover { get; init; }
 
     public DocumentSymbolClientCapabilitiesPayload? DocumentSymbol { get; init; }
+
+    public SemanticTokensClientCapabilitiesPayload? SemanticTokens { get; init; }
+}
+
+/// <summary>
+/// Server-side shape of <c>textDocument.semanticTokens</c> client capabilities (§7.1, §7.1.1).
+/// </summary>
+internal sealed class SemanticTokensClientCapabilitiesPayload
+{
+    public SemanticTokensRequestsPayload? Requests { get; init; }
+
+    public string[]? TokenTypes { get; init; }
+
+    public string[]? TokenModifiers { get; init; }
+
+    public string[]? Formats { get; init; }
+
+    public bool? AugmentsSyntaxTokens { get; init; }
+}
+
+/// <summary>
+/// <c>requests.full</c> is either a boolean or an object (<c>{ "delta": true }</c>), so it is
+/// captured as a raw value and interpreted by the session.
+/// </summary>
+internal sealed class SemanticTokensRequestsPayload
+{
+    public object? Full { get; init; }
 }
 
 internal sealed class PublishDiagnosticsClientCapabilitiesPayload

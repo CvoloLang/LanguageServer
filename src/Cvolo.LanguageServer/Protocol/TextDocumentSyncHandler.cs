@@ -18,7 +18,8 @@ namespace Cvolo.LanguageServer.Protocol;
 internal sealed class TextDocumentSyncHandler(
     ILspLogger logger,
     DiagnosticSink diagnostics,
-    Func<DocumentStore> storeAccessor) : IDisposable
+    Func<DocumentStore> storeAccessor,
+    Action? onProjectChanged = null) : IDisposable
 {
     private const string CvoloLanguageId = "cvolo";
 
@@ -74,6 +75,7 @@ internal sealed class TextDocumentSyncHandler(
 
         logger.Info($"[diag] didOpen '{documentUri}' v{item.Version}; scheduling diagnostics.");
         Scheduler.Schedule(project);
+        onProjectChanged?.Invoke();
     }
 
     [JsonRpcMethod(Methods.TextDocumentDidChangeName, UseSingleObjectParameterDeserialization = true)]
@@ -117,6 +119,7 @@ internal sealed class TextDocumentSyncHandler(
 
         logger.Info($"[diag] didChange '{documentUri}' v{textDocument.Version}; scheduling diagnostics.");
         Scheduler.Schedule(project);
+        onProjectChanged?.Invoke();
     }
 
     [JsonRpcMethod(Methods.TextDocumentDidCloseName, UseSingleObjectParameterDeserialization = true)]
@@ -156,6 +159,8 @@ internal sealed class TextDocumentSyncHandler(
         {
             Scheduler.OnProjectDrained(project);
         }
+
+        onProjectChanged?.Invoke();
     }
 
     public void Dispose()

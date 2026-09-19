@@ -70,4 +70,9 @@ internal sealed class CvoloLanguageBackend(IReadOnlyList<string> workspaceFolder
     {
         throw new InvalidOperationException("Cvolo compiler tooling is unavailable.");
     }
+
+    public BackendSemanticTokenResult GetSemanticTokens(BackendSnapshot snapshot, BackendDocumentHandle document)
+    {
+        throw new InvalidOperationException("Cvolo compiler tooling is unavailable.");
+    }
 }

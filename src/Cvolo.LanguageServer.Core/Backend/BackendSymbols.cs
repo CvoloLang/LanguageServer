@@ -85,3 +85,30 @@ internal sealed record BackendDocumentSymbol(
     TextSpan Range,
     TextSpan SelectionSpan,
     IReadOnlyList<BackendDocumentSymbol> Children);
+
+/// <summary>
+/// Backend-neutral semantic-token modifier flags (LSP-5 §10). The protocol layer maps these to
+/// the negotiated LSP modifier bitset.
+/// </summary>
+[Flags]
+internal enum BackendSemanticTokenModifiers
+{
+    None = 0,
+    Declaration = 1 << 0,
+    Readonly = 1 << 1,
+    Static = 1 << 2,
+}
+
+/// <summary>
+/// One semantic source occurrence: exact span, classification and modifier flags.
+/// </summary>
+internal sealed record BackendSemanticToken(
+    TextSpan Span,
+    BackendSymbolKind Kind,
+    BackendSemanticTokenModifiers Modifiers);
+
+/// <summary>
+/// The semantic tokens for one document, from a single captured snapshot.
+/// </summary>
+internal sealed record BackendSemanticTokenResult(
+    IReadOnlyList<BackendSemanticToken> Tokens);

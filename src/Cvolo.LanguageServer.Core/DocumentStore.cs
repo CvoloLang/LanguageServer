@@ -357,6 +357,16 @@ internal sealed class DocumentStore(ILanguageBackend backend, ICoreLogger? logge
         return backend.GetDocumentSymbols(context.CurrentProjectSnapshot, context.Document.BackendDocument);
     }
 
+    /// <summary>
+    /// Returns the semantic tokens of the document captured in <paramref name="context"/> from its
+    /// own coherent snapshot. Callers must discard the result unless
+    /// <see cref="IsCurrent(SemanticRequestContext)"/> still holds.
+    /// </summary>
+    public BackendSemanticTokenResult GetSemanticTokens(SemanticRequestContext context)
+    {
+        return backend.GetSemanticTokens(context.CurrentProjectSnapshot, context.Document.BackendDocument);
+    }
+
     /// <summary>Ties together the published state and the backend tokens that produced it.</summary>
     private sealed record DocumentEntry(DocumentState State, BackendProject Project, BackendDocumentHandle Handle);
 }

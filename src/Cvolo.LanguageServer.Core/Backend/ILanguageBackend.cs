@@ -114,4 +114,11 @@ internal interface ILanguageBackend
     /// captured <paramref name="snapshot"/> in deterministic source order (§19).
     /// </summary>
     IReadOnlyList<BackendDocumentSymbol> GetDocumentSymbols(BackendSnapshot snapshot, BackendDocumentHandle document);
+
+    /// <summary>
+    /// Returns the semantic tokens of <paramref name="document"/> from the captured
+    /// <paramref name="snapshot"/> (§13, §14). Classification is compiler-owned and semantic;
+    /// unresolved occurrences are omitted.
+    /// </summary>
+    BackendSemanticTokenResult GetSemanticTokens(BackendSnapshot snapshot, BackendDocumentHandle document);
 }

@@ -396,6 +396,41 @@ internal sealed class CvoloLanguageBackend(IReadOnlyList<string> workspaceFolder
             children);
     }
 
+    public BackendSemanticTokenResult GetSemanticTokens(BackendSnapshot snapshot, BackendDocumentHandle document)
+    {
+        var toolingSnapshot = ((ToolingBackendSnapshot)snapshot).Snapshot;
+        var documentId = ((CvoloDocumentHandle)document).DocumentId;
+
+        if (!toolingSnapshot.TryGetDocument(documentId, out DocumentSnapshot? toolingDocument))
+        {
+            throw new InvalidOperationException("The semantic-token document is not present in the captured snapshot.");
+        }
+
+        IReadOnlyList<SemanticTokenInfo> tokens = toolingDocument.GetSemanticTokens();
+        var mapped = new List<BackendSemanticToken>(tokens.Count);
+        foreach (SemanticTokenInfo token in tokens)
+        {
+            mapped.Add(new BackendSemanticToken(
+                new CoreTextSpan(token.Span.Start, token.Span.Length),
+                MapSymbolKind(token.Kind),
+                MapTokenModifiers(token.Modifiers)));
+        }
+
+        return new BackendSemanticTokenResult(mapped);
+    }
+
+    private static BackendSemanticTokenModifiers MapTokenModifiers(SemanticTokenModifiers modifiers)
+    {
+        var result = BackendSemanticTokenModifiers.None;
+        if (modifiers.HasFlag(SemanticTokenModifiers.Declaration))
+            result |= BackendSemanticTokenModifiers.Declaration;
+        if (modifiers.HasFlag(SemanticTokenModifiers.Readonly))
+            result |= BackendSemanticTokenModifiers.Readonly;
+        if (modifiers.HasFlag(SemanticTokenModifiers.Static))
+            result |= BackendSemanticTokenModifiers.Static;
+        return result;
+    }
+
     private static readonly BackendDefinitionResult EmptyDefinitions =
         new(new Dictionary<DocumentUri, string>(), []);
 

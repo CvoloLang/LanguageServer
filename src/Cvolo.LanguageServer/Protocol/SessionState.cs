@@ -71,8 +71,57 @@ internal sealed class SessionState
         HoverPrefersMarkdown = ComputeHoverMarkdown(initializeParams);
         HierarchicalDocumentSymbols =
             initializeParams?.Capabilities?.TextDocument?.DocumentSymbol?.HierarchicalDocumentSymbolSupport == true;
+        ComputeSemanticTokens(initializeParams);
         _initializeReceived = true;
     }
+
+    private static readonly string[] CanonicalTokenTypes =
+    [
+        "namespace", "type", "struct", "enum", "interface", "typeParameter",
+        "parameter", "variable", "property", "enumMember", "function", "method", "operator",
+    ];
+
+    private static readonly string[] CanonicalTokenModifiers = ["declaration", "readonly", "static"];
+
+    /// <summary>
+    /// Whether full semantic tokens are enabled for the session (all compatibility gates passed
+    /// and the effective token-type legend is non-empty).
+    /// </summary>
+    public bool SemanticTokensEnabled { get; private set; }
+
+    /// <summary>Whether the client supports <c>workspace/semanticTokens/refresh</c>.</summary>
+    public bool RefreshSupported { get; private set; }
+
+    /// <summary>The negotiated effective token-type legend (server canonical order).</summary>
+    public string[] SemanticTokenTypes { get; private set; } = [];
+
+    /// <summary>The negotiated effective token-modifier legend (server canonical order).</summary>
+    public string[] SemanticTokenModifiers { get; private set; } = [];
+
+    private void ComputeSemanticTokens(InitializeRequestParams? initializeParams)
+    {
+        var semanticTokens = initializeParams?.Capabilities?.TextDocument?.SemanticTokens;
+        RefreshSupported = initializeParams?.Capabilities?.Workspace?.SemanticTokens?.RefreshSupport == true;
+
+        var clientTypes = semanticTokens?.TokenTypes ?? [];
+        SemanticTokenTypes = [.. CanonicalTokenTypes.Where(clientTypes.Contains)];
+
+        var clientModifiers = semanticTokens?.TokenModifiers ?? [];
+        SemanticTokenModifiers = [.. CanonicalTokenModifiers.Where(clientModifiers.Contains)];
+
+        var fullRequested = IsFullRequested(semanticTokens?.Requests?.Full);
+        var relativeFormat = semanticTokens?.Formats?.Contains("relative", StringComparer.Ordinal) == true;
+        var augments = semanticTokens?.AugmentsSyntaxTokens != false;
+
+        SemanticTokensEnabled = fullRequested && relativeFormat && augments && SemanticTokenTypes.Length > 0;
+    }
+
+    private static bool IsFullRequested(object? full) => full switch
+    {
+        null => false,
+        bool value => value,
+        _ => true,
+    };
 
     /// <summary>
     /// Whether hover content should be returned as markdown. Prefers markdown

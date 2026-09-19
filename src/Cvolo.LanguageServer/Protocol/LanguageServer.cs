@@ -28,6 +28,8 @@ internal sealed class LanguageServer(
     private HoverHandler? _hover;
     private DefinitionHandler? _definition;
     private DocumentSymbolHandler? _documentSymbols;
+    private SemanticTokensHandler? _semanticTokens;
+    private SemanticTokensRefreshCoordinator? _refresh;
     private Timer? _deadClientExitTimer;
 
     /// <summary>
@@ -46,7 +48,7 @@ internal sealed class LanguageServer(
     /// <summary>
     /// Text document synchronization (didOpen/didChange/didClose) handler.
     /// </summary>
-    internal TextDocumentSyncHandler Sync => _sync ??= new TextDocumentSyncHandler(logger, _diagnostics, () => Store);
+    internal TextDocumentSyncHandler Sync => _sync ??= new TextDocumentSyncHandler(logger, _diagnostics, () => Store, () => Refresh.RequestRefresh());
 
     /// <summary>
     /// textDocument/completion handler.
@@ -67,6 +69,18 @@ internal sealed class LanguageServer(
     /// textDocument/documentSymbol handler.
     /// </summary>
     internal DocumentSymbolHandler DocumentSymbols => _documentSymbols ??= new DocumentSymbolHandler(logger, () => Store, () => _state.HierarchicalDocumentSymbols);
+
+    /// <summary>
+    /// textDocument/semanticTokens/full handler.
+    /// </summary>
+    internal SemanticTokensHandler SemanticTokens => _semanticTokens ??= new SemanticTokensHandler(logger, () => Store, () => _state.SemanticTokenTypes, () => _state.SemanticTokenModifiers);
+
+    /// <summary>
+    /// Server-to-client semantic-token refresh coordinator.
+    /// </summary>
+    internal SemanticTokensRefreshCoordinator Refresh => _refresh ??= new SemanticTokensRefreshCoordinator(
+        () => _state.SemanticTokensEnabled && _state.RefreshSupported,
+        logger);
 
     public InitializeResponse Initialize(InitializeRequestParams? initializeParams)
     {
@@ -148,6 +162,18 @@ internal sealed class LanguageServer(
                 HoverProvider = true,
                 DefinitionProvider = true,
                 DocumentSymbolProvider = true,
+                SemanticTokensProvider = _state.SemanticTokensEnabled
+                    ? new SemanticTokensOptions
+                    {
+                        Legend = new SemanticTokensLegend
+                        {
+                            TokenTypes = _state.SemanticTokenTypes,
+                            TokenModifiers = _state.SemanticTokenModifiers,
+                        },
+                        Full = true,
+                        Range = false,
+                    }
+                    : null,
             },
             new ServerInfo(ServerMetadata.ServerName, ServerMetadata.ServerVersion));
     }
@@ -256,6 +282,7 @@ internal sealed class LanguageServer(
     public void Dispose()
     {
         DisarmClientWatcher();
+        _refresh?.Stop();
         _sync?.Dispose();
         _deadClientExitTimer?.Dispose();
         _deadClientExitTimer = null;
