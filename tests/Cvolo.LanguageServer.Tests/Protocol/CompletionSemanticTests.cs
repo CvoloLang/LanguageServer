@@ -42,7 +42,10 @@ public class CompletionSemanticTests : IDisposable
         (string text, _, _) = SplitCursor(marked);
         await _session.Client.NotifyDidOpenAsync(_workspace.DocumentUri(name), "cvolo", 1, text).WithTimeout("didOpen");
         var coreUri = DocumentUri.Create(_workspace.PathOf(name));
-        await _session.Client.WaitUntilAsync(() => _session.Server.Store.TryGet(coreUri, out _), "didOpen applied");
+        await _session.Client.WaitUntilAsync(
+            () => _session.Server.Store.TryGet(coreUri, out _),
+            "didOpen applied",
+            TimeSpan.FromSeconds(60));
     }
 
     private Task<CompletionList?> CompleteAsync(string name, string marked)

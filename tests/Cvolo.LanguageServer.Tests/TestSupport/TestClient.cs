@@ -110,6 +110,19 @@ internal sealed class TestClient : IDisposable
         await ExpectErrorAsync("cvolo/unknownRequest", null).ConfigureAwait(false);
     }
 
+    public bool HasSentCancelRequest()
+    {
+        foreach (string frame in FrameParser.ParseAll(_clientOutput.RecordedBytes))
+        {
+            if (frame.Contains("\"method\":\"$/cancelRequest\"", StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public Task<object?> InvokeDelayedAsync(CancellationToken cancellationToken = default)
     {
         return _rpc.InvokeWithParameterObjectAsync<object?>("cvolo/delayed", null, cancellationToken);
@@ -245,7 +258,6 @@ internal sealed class TestClient : IDisposable
         }
     }
 
-    /// <summary>Writes a raw JSON body as a framed JSON-RPC message.</summary>
     /// <summary>Writes a raw JSON body as a framed JSON-RPC message.</summary>
     public void SendRawJson(string json)
     {

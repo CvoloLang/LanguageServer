@@ -11,6 +11,7 @@ namespace Cvolo.LanguageServer.Tests.Protocol;
 /// Deterministic staleness/cancellation/failure coverage for completion. Every
 /// race is created with an explicit blocking fake backend rather than sleeps.
 /// </summary>
+[Collection(ProtocolConcurrencyCollection.Name)]
 public class CompletionConcurrencyTests : IDisposable
 {
     private readonly TestWorkspace _workspace;
@@ -128,8 +129,11 @@ public class CompletionConcurrencyTests : IDisposable
         Assert.True(_backend.WaitUntilEntered(TimeSpan.FromSeconds(5)), "backend completion should be entered");
 
         cts.Cancel();
-        // The server processes the $/cancelRequest notification before the drain
-        // request's response, so the in-flight token is cancelled before release.
+        await _session.Client.WaitUntilAsync(
+            _session.Client.HasSentCancelRequest,
+            "cancel request sent");
+        // Once the cancellation frame is on the wire, the drain request is ordered
+        // after it, so the in-flight token is cancelled before release.
         await _session.Client.DrainNotificationsAsync();
         _backend.Release();
 

@@ -15,6 +15,7 @@ namespace Cvolo.LanguageServer.Tests.Protocol;
 /// and document symbols, using an explicit blocking fake backend (§28.3, §28.4,
 /// §28.10, §28.12, §28.17, §28.18).
 /// </summary>
+[Collection(ProtocolConcurrencyCollection.Name)]
 public class NavigationConcurrencyTests : IDisposable
 {
     private readonly TestWorkspace _workspace;
@@ -135,6 +136,9 @@ public class NavigationConcurrencyTests : IDisposable
         Assert.True(_backend.WaitUntilNavigationEntered(TimeSpan.FromSeconds(5)), "backend navigation should be entered");
 
         cts.Cancel();
+        await _session.Client.WaitUntilAsync(
+            _session.Client.HasSentCancelRequest,
+            "cancel request sent");
         await _session.Client.DrainNotificationsAsync();
         _backend.ReleaseNavigation();
 
