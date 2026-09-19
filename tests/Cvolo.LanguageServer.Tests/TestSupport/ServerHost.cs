@@ -54,6 +54,7 @@ internal sealed class ServerHost : IDisposable
         HeaderDelimitedMessageHandler handler = new(serverOutput, transport.ServerInput, formatter);
         JsonRpc rpc = new(handler);
         server.Diagnostics.Attach(rpc);
+        server.Refresh.Attach(rpc);
         rpc.AddLocalRpcTarget(server, new JsonRpcTargetOptions
         {
             MethodNameTransform = m => m.Length == 0 ? m : char.ToLowerInvariant(m[0]) + m.Substring(1),
@@ -80,6 +81,11 @@ internal sealed class ServerHost : IDisposable
             UseSingleObjectParameterDeserialization = true,
         });
         rpc.AddLocalRpcTarget(server.DocumentSymbols, new JsonRpcTargetOptions
+        {
+            MethodNameTransform = m => m.Length == 0 ? m : char.ToLowerInvariant(m[0]) + m.Substring(1),
+            UseSingleObjectParameterDeserialization = true,
+        });
+        rpc.AddLocalRpcTarget(server.SemanticTokens, new JsonRpcTargetOptions
         {
             MethodNameTransform = m => m.Length == 0 ? m : char.ToLowerInvariant(m[0]) + m.Substring(1),
             UseSingleObjectParameterDeserialization = true,

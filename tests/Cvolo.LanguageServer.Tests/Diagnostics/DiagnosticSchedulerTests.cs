@@ -498,6 +498,11 @@ public class DiagnosticSchedulerTests
         {
             return [];
         }
+
+        public BackendSemanticTokenResult GetSemanticTokens(BackendSnapshot snapshot, BackendDocumentHandle document)
+        {
+            return new BackendSemanticTokenResult([]);
+        }
     }
 
     private sealed class FakeProject : BackendProject

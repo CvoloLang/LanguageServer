@@ -418,6 +418,11 @@ public class DocumentStoreTests
             return [];
         }
 
+        public BackendSemanticTokenResult GetSemanticTokens(BackendSnapshot snapshot, BackendDocumentHandle document)
+        {
+            return new BackendSemanticTokenResult([]);
+        }
+
         public string? TextOf(DocumentUri document)
         {
             lock (_gate)

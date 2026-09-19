@@ -175,6 +175,11 @@ internal sealed class BlockingBackend : ILanguageBackend
         return CannedSymbols;
     }
 
+    public BackendSemanticTokenResult GetSemanticTokens(BackendSnapshot snapshot, BackendDocumentHandle document)
+    {
+        return new BackendSemanticTokenResult([]);
+    }
+
     private void EnterNavigation()
     {
         _navigationEntered.Set();
