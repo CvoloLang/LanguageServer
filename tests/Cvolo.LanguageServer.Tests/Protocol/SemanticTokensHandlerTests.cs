@@ -148,4 +148,36 @@ public class SemanticTokensHandlerTests : IDisposable
 
         Assert.Null(result);
     }
+
+    [Fact]
+    public async Task Full_ClassifiesCallWithMemberArgument()
+    {
+        await InitializeAsync(Capabilities());
+        await OpenAsync("struct Point { int x; }\nint Twice(int value) { return value + value; }\nint main() {\n    val Point p = Point { x: 1 };\n    val int local = Twice(p.x);\n    return local;\n}\n");
+
+        JObject? result = await _session.Client.SemanticTokensAsync(_workspace.DocumentUri("main.cvl")).WithTimeout("semanticTokens");
+
+        Assert.NotNull(result);
+        var tokens = Decode(result!["data"]!.Values<int>().ToArray());
+
+        // Line 4 (0-based) is "    val int local = Twice(p.x);": local(12), Twice(20), p(26), x(28).
+        int functionType = Array.IndexOf(CanonicalTypes, "function");
+        Assert.Contains(tokens, t => t.Line == 4 && t.Character == 20 && t.Length == 5 && t.Type == functionType);
+        Assert.Contains(tokens, t => t.Line == 4 && t.Character == 12 && t.Length == 5); // local
+    }
+
+    private static List<(int Line, int Character, int Length, int Type, int Modifiers)> Decode(int[] data)
+    {
+        var tokens = new List<(int, int, int, int, int)>();
+        var line = 0;
+        var character = 0;
+        for (var i = 0; i + 4 < data.Length; i += 5)
+        {
+            line += data[i];
+            character = data[i] == 0 ? character + data[i + 1] : data[i + 1];
+            tokens.Add((line, character, data[i + 2], data[i + 3], data[i + 4]));
+        }
+
+        return tokens;
+    }
 }
