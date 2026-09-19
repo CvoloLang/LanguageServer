@@ -72,6 +72,7 @@ internal sealed class SemanticTokensHandler(
             return null;
         }
 
+        logger.Info($"[semanticTokens] {documentUri}: {data.Length / 5} token(s).");
         return new SemanticTokensResponse(data);
     }
 

@@ -142,6 +142,7 @@ internal sealed class LanguageServer(
         }
 
         _state.MarkInitializeReceived(initializeParams);
+        logger.Info($"Semantic tokens: enabled={_state.SemanticTokensEnabled}, refresh={_state.RefreshSupported}, tokenTypes={_state.SemanticTokenTypes.Length}, tokenModifiers={_state.SemanticTokenModifiers.Length}.");
         _diagnostics.SetRelatedInformationSupported(
             initializeParams.Capabilities?.TextDocument?.PublishDiagnostics?.RelatedInformation == true);
         logger.Info("Client initialized.");
