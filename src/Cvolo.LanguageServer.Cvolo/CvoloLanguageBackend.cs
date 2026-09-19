@@ -195,9 +195,9 @@ internal sealed class CvoloLanguageBackend(IReadOnlyList<string> workspaceFolder
 
     private CvoloProjectSession CreateSession(string projectDirectory)
     {
-        // The editor compiles the standard library alongside the project so stdlib APIs
-        // resolve; the compiler CLI does the same.
-        var workspace = CvoloWorkspace.Create(includeStandardLibrary: true);
+        // The workspace builds the same semantic universe as the compiler (project sources,
+        // standard library, ProjectReference sources and package/.cvlib API units).
+        var workspace = CvoloWorkspace.Create();
         var project = workspace.OpenProject(projectDirectory);
         return new CvoloProjectSession(workspace, project);
     }
