@@ -122,6 +122,29 @@ public class DiagnosticMappingTests
     }
 
     [Fact]
+    public void NonEmptySpan_MapsToExactRange_PreservingCompilerSpan()
+    {
+        // A compiler diagnostic reported on the iterator expression `r` must publish exactly
+        // that range: not widened to the whole statement and not shifted.
+        const string mainText = "int main() {\n    foreach (val item in r) {\n    }\n}\n";
+        var start = mainText.IndexOf("in r)", StringComparison.Ordinal) + "in ".Length;
+        var lineStart = mainText.LastIndexOf('\n', start) + 1;
+        var character = start - lineStart;
+
+        BackendDiagnostic diagnostic = Diag(BackendDiagnosticSeverity.Error) with
+        {
+            Location = new BackendDiagnosticLocation(Main, new TextSpan(start, 1), null),
+        };
+
+        DiagnosticPayload payload = Assert.Single(Publish([diagnostic], mainText: mainText));
+
+        Assert.Equal(1, payload.Range.Start.Line);
+        Assert.Equal(character, payload.Range.Start.Character);
+        Assert.Equal(1, payload.Range.End.Line);
+        Assert.Equal(character + 1, payload.Range.End.Character);
+    }
+
+    [Fact]
     public void OutOfRangeSpan_IsSkipped_AndLogged()
     {
         var logger = new RecordingLspLogger();
