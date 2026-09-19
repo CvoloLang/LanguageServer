@@ -403,6 +403,21 @@ public class DocumentStoreTests
             return new BackendCompletionResult(new TextSpan(position, 0), []);
         }
 
+        public BackendSymbolInfo? GetSymbolAtPosition(BackendSnapshot snapshot, BackendDocumentHandle document, int position)
+        {
+            return null;
+        }
+
+        public BackendDefinitionResult GetDefinitions(BackendSnapshot snapshot, BackendSymbolHandle symbol)
+        {
+            return new BackendDefinitionResult(new Dictionary<DocumentUri, string>(), []);
+        }
+
+        public IReadOnlyList<BackendDocumentSymbol> GetDocumentSymbols(BackendSnapshot snapshot, BackendDocumentHandle document)
+        {
+            return [];
+        }
+
         public string? TextOf(DocumentUri document)
         {
             lock (_gate)

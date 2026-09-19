@@ -122,6 +122,70 @@ internal sealed class BlockingBackend : ILanguageBackend
             : new BackendCompletionResult(new TextSpan(position, 0), CannedItems);
     }
 
+    private readonly ManualResetEventSlim _navigationBlock = new(initialState: true);
+    private readonly ManualResetEventSlim _navigationEntered = new(initialState: false);
+
+    /// <summary>When true, a navigation call throws an ordinary exception.</summary>
+    public bool ThrowOnNavigation { get; set; }
+
+    /// <summary>The symbol returned by <see cref="GetSymbolAtPosition"/> (null means "no symbol").</summary>
+    public BackendSymbolInfo? CannedSymbol { get; set; }
+
+    /// <summary>The definitions returned by <see cref="GetDefinitions"/>.</summary>
+    public BackendDefinitionResult CannedDefinitions { get; set; } =
+        new(new Dictionary<DocumentUri, string>(), []);
+
+    /// <summary>The outline returned by <see cref="GetDocumentSymbols"/>.</summary>
+    public IReadOnlyList<BackendDocumentSymbol> CannedSymbols { get; set; } = [];
+
+    /// <summary>Arms the next navigation call to block until <see cref="ReleaseNavigation"/>.</summary>
+    public void ArmNavigation()
+    {
+        _navigationEntered.Reset();
+        _navigationBlock.Reset();
+    }
+
+    /// <summary>Lets a blocked navigation call finish.</summary>
+    public void ReleaseNavigation()
+    {
+        _navigationBlock.Set();
+    }
+
+    /// <summary>Waits until a navigation call has entered the backend.</summary>
+    public bool WaitUntilNavigationEntered(TimeSpan timeout)
+    {
+        return _navigationEntered.Wait(timeout);
+    }
+
+    public BackendSymbolInfo? GetSymbolAtPosition(BackendSnapshot snapshot, BackendDocumentHandle document, int position)
+    {
+        EnterNavigation();
+        return CannedSymbol;
+    }
+
+    public BackendDefinitionResult GetDefinitions(BackendSnapshot snapshot, BackendSymbolHandle symbol)
+    {
+        EnterNavigation();
+        return CannedDefinitions;
+    }
+
+    public IReadOnlyList<BackendDocumentSymbol> GetDocumentSymbols(BackendSnapshot snapshot, BackendDocumentHandle document)
+    {
+        EnterNavigation();
+        return CannedSymbols;
+    }
+
+    private void EnterNavigation()
+    {
+        _navigationEntered.Set();
+        _navigationBlock.Wait();
+
+        if (ThrowOnNavigation)
+        {
+            throw new InvalidOperationException("simulated navigation failure");
+        }
+    }
+
     private sealed class FakeProject : BackendProject
     {
         public long Generation;

@@ -89,4 +89,29 @@ internal interface ILanguageBackend
     /// results (§4.4, §16.6, §30).
     /// </summary>
     BackendCompletionResult GetCompletions(BackendSnapshot snapshot, BackendDocumentHandle document, int position);
+
+    /// <summary>
+    /// Resolves the backend-neutral symbol at <paramref name="position"/> (an
+    /// absolute UTF-16 code-unit offset over the captured snapshot text) from the
+    /// one coherent <paramref name="snapshot"/>. Returns null when no trustworthy
+    /// symbol is bound there. The returned handle is scoped to
+    /// <paramref name="snapshot"/> and must not be used with another snapshot
+    /// (§12, §15).
+    /// </summary>
+    BackendSymbolInfo? GetSymbolAtPosition(BackendSnapshot snapshot, BackendDocumentHandle document, int position);
+
+    /// <summary>
+    /// Returns the source declarations of <paramref name="symbol"/> from the same
+    /// immutable <paramref name="snapshot"/> the handle was resolved from. A
+    /// handle from a foreign snapshot yields an empty result, never an unrelated
+    /// symbol. Target document texts are included so closed documents can be
+    /// mapped (§17, §18).
+    /// </summary>
+    BackendDefinitionResult GetDefinitions(BackendSnapshot snapshot, BackendSymbolHandle symbol);
+
+    /// <summary>
+    /// Returns the declaration outline of <paramref name="document"/> from the
+    /// captured <paramref name="snapshot"/> in deterministic source order (§19).
+    /// </summary>
+    IReadOnlyList<BackendDocumentSymbol> GetDocumentSymbols(BackendSnapshot snapshot, BackendDocumentHandle document);
 }

@@ -21,6 +21,12 @@ internal sealed record ServerCapabilities
     public TextDocumentSyncOptions? TextDocumentSync { get; init; }
 
     public CompletionOptions? CompletionProvider { get; init; }
+
+    public bool? HoverProvider { get; init; }
+
+    public bool? DefinitionProvider { get; init; }
+
+    public bool? DocumentSymbolProvider { get; init; }
 }
 
 /// <summary>
@@ -72,11 +78,33 @@ internal sealed class ClientCapabilitiesPayload
 internal sealed class TextDocumentClientCapabilitiesPayload
 {
     public PublishDiagnosticsClientCapabilitiesPayload? PublishDiagnostics { get; init; }
+
+    public HoverClientCapabilitiesPayload? Hover { get; init; }
+
+    public DocumentSymbolClientCapabilitiesPayload? DocumentSymbol { get; init; }
 }
 
 internal sealed class PublishDiagnosticsClientCapabilitiesPayload
 {
     public bool? RelatedInformation { get; init; }
+}
+
+/// <summary>
+/// Server-side shape of <c>textDocument.hover</c> client capabilities. The
+/// server reads the ordered content formats to decide between markdown and
+/// plaintext hover content (§7.2).
+/// </summary>
+internal sealed class HoverClientCapabilitiesPayload
+{
+    public string[]? ContentFormat { get; init; }
+}
+
+/// <summary>
+/// Server-side shape of <c>textDocument.documentSymbol</c> client capabilities.
+/// </summary>
+internal sealed class DocumentSymbolClientCapabilitiesPayload
+{
+    public bool? HierarchicalDocumentSymbolSupport { get; init; }
 }
 
 /// <summary>

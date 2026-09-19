@@ -326,6 +326,37 @@ internal sealed class DocumentStore(ILanguageBackend backend, ICoreLogger? logge
         return backend.GetCompletions(context.Document.BackendSnapshot, context.Document.BackendDocument, position);
     }
 
+    /// <summary>
+    /// Resolves the symbol at <paramref name="position"/> from the document's own
+    /// coherent snapshot captured in <paramref name="context"/>. Callers must
+    /// discard the result unless <see cref="IsCurrent(SemanticRequestContext)"/>
+    /// still holds.
+    /// </summary>
+    public BackendSymbolInfo? GetSymbolAtPosition(SemanticRequestContext context, int position)
+    {
+        return backend.GetSymbolAtPosition(context.CurrentProjectSnapshot, context.Document.BackendDocument, position);
+    }
+
+    /// <summary>
+    /// Resolves the source declarations of a symbol handle against the captured
+    /// project snapshot. A handle from a foreign snapshot yields an empty result.
+    /// </summary>
+    public BackendDefinitionResult GetDefinitions(BackendSnapshot snapshot, BackendSymbolHandle symbol)
+    {
+        return backend.GetDefinitions(snapshot, symbol);
+    }
+
+    /// <summary>
+    /// Returns the declaration outline of the document captured in
+    /// <paramref name="context"/> from its own coherent snapshot. Callers must
+    /// discard the result unless <see cref="IsCurrent(SemanticRequestContext)"/>
+    /// still holds.
+    /// </summary>
+    public IReadOnlyList<BackendDocumentSymbol> GetDocumentSymbols(SemanticRequestContext context)
+    {
+        return backend.GetDocumentSymbols(context.CurrentProjectSnapshot, context.Document.BackendDocument);
+    }
+
     /// <summary>Ties together the published state and the backend tokens that produced it.</summary>
     private sealed record DocumentEntry(DocumentState State, BackendProject Project, BackendDocumentHandle Handle);
 }

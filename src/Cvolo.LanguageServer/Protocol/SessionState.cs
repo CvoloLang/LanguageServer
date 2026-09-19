@@ -68,7 +68,40 @@ internal sealed class SessionState
     public void MarkInitializeReceived(InitializeRequestParams? initializeParams)
     {
         _initializeParams = initializeParams;
+        HoverPrefersMarkdown = ComputeHoverMarkdown(initializeParams);
+        HierarchicalDocumentSymbols =
+            initializeParams?.Capabilities?.TextDocument?.DocumentSymbol?.HierarchicalDocumentSymbolSupport == true;
         _initializeReceived = true;
+    }
+
+    /// <summary>
+    /// Whether hover content should be returned as markdown. Prefers markdown
+    /// when the client lists it before plaintext; otherwise plaintext (§7.2).
+    /// </summary>
+    public bool HoverPrefersMarkdown { get; private set; }
+
+    /// <summary>
+    /// Whether the client supports hierarchical document symbols. When false,
+    /// document symbols are flattened to <c>SymbolInformation[]</c> (§7.3).
+    /// </summary>
+    public bool HierarchicalDocumentSymbols { get; private set; }
+
+    private static bool ComputeHoverMarkdown(InitializeRequestParams? initializeParams)
+    {
+        string[]? formats = initializeParams?.Capabilities?.TextDocument?.Hover?.ContentFormat;
+        if (formats is null || formats.Length == 0)
+        {
+            return false;
+        }
+
+        var markdown = Array.IndexOf(formats, "markdown");
+        if (markdown < 0)
+        {
+            return false;
+        }
+
+        var plaintext = Array.IndexOf(formats, "plaintext");
+        return plaintext < 0 || markdown < plaintext;
     }
 
     public void MarkInitialized()

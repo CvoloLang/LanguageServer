@@ -1,6 +1,7 @@
 using Cvolo.LanguageServer.Protocol;
 using Microsoft.VisualStudio.LanguageServer.Protocol;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using Newtonsoft.Json.Serialization;
 using StreamJsonRpc;
 using Xunit.Sdk;
@@ -112,6 +113,88 @@ internal sealed class TestClient : IDisposable
     public Task<object?> InvokeDelayedAsync(CancellationToken cancellationToken = default)
     {
         return _rpc.InvokeWithParameterObjectAsync<object?>("cvolo/delayed", null, cancellationToken);
+    }
+
+    public Task<Hover?> HoverAsync(Uri uri, int line, int character)
+    {
+        return _rpc.InvokeWithParameterObjectAsync<Hover?>(
+            Methods.TextDocumentHoverName,
+            PositionParams(uri, line, character));
+    }
+
+    public Task<Location[]?> DefinitionAsync(Uri uri, int line, int character)
+    {
+        return _rpc.InvokeWithParameterObjectAsync<Location[]?>(
+            Methods.TextDocumentDefinitionName,
+            PositionParams(uri, line, character));
+    }
+
+    public Task<JArray?> DocumentSymbolAsync(Uri uri)
+    {
+        return _rpc.InvokeWithParameterObjectAsync<JArray?>(
+            Methods.TextDocumentDocumentSymbolName,
+            new DocumentSymbolParams { TextDocument = new TextDocumentIdentifier { Uri = uri } });
+    }
+
+    public Task<Hover?> HoverWithTokenAsync(Uri uri, int line, int character, CancellationToken cancellationToken)
+    {
+        return _rpc.InvokeWithParameterObjectAsync<Hover?>(
+            Methods.TextDocumentHoverName,
+            PositionParams(uri, line, character),
+            cancellationToken);
+    }
+
+    public Task<Location[]?> DefinitionWithTokenAsync(Uri uri, int line, int character, CancellationToken cancellationToken)
+    {
+        return _rpc.InvokeWithParameterObjectAsync<Location[]?>(
+            Methods.TextDocumentDefinitionName,
+            PositionParams(uri, line, character),
+            cancellationToken);
+    }
+
+    public Task<JArray?> DocumentSymbolWithTokenAsync(Uri uri, CancellationToken cancellationToken)
+    {
+        return _rpc.InvokeWithParameterObjectAsync<JArray?>(
+            Methods.TextDocumentDocumentSymbolName,
+            new DocumentSymbolParams { TextDocument = new TextDocumentIdentifier { Uri = uri } },
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Initializes with the server's own params shape, including the client
+    /// capabilities LSP-4 reads (hover content formats, hierarchical symbols).
+    /// </summary>
+    public Task<InitializeResponse> InitializeAsync(int? processId, string? rootPath, string[]? hoverContentFormat, bool hierarchicalSymbols)
+    {
+        return _rpc.InvokeWithParameterObjectAsync<InitializeResponse>(
+            Methods.InitializeName,
+            new InitializeRequestParams
+            {
+                ProcessId = processId,
+                RootUri = rootPath is null ? null : new Uri(rootPath),
+                Capabilities = new ClientCapabilitiesPayload
+                {
+                    TextDocument = new TextDocumentClientCapabilitiesPayload
+                    {
+                        Hover = hoverContentFormat is null
+                            ? null
+                            : new HoverClientCapabilitiesPayload { ContentFormat = hoverContentFormat },
+                        DocumentSymbol = new DocumentSymbolClientCapabilitiesPayload
+                        {
+                            HierarchicalDocumentSymbolSupport = hierarchicalSymbols,
+                        },
+                    },
+                },
+            });
+    }
+
+    private static TextDocumentPositionParams PositionParams(Uri uri, int line, int character)
+    {
+        return new TextDocumentPositionParams
+        {
+            TextDocument = new TextDocumentIdentifier { Uri = uri },
+            Position = new Position { Line = line, Character = character },
+        };
     }
 
     public Task<object?> ShutdownAsync()

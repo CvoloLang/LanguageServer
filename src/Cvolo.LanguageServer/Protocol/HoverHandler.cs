@@ -1,0 +1,144 @@
+using Cvolo.LanguageServer.Core;
+using Cvolo.LanguageServer.Core.Backend;
+using Cvolo.LanguageServer.Core.Diagnostics;
+using Cvolo.LanguageServer.Core.Documents;
+using Cvolo.LanguageServer.Logging;
+using Microsoft.VisualStudio.LanguageServer.Protocol;
+using StreamJsonRpc;
+using LspRange = Microsoft.VisualStudio.LanguageServer.Protocol.Range;
+
+namespace Cvolo.LanguageServer.Protocol;
+
+/// <summary>
+/// textDocument/hover handler. Validates the wire request, captures a coherent
+/// semantic context, maps the UTF-16 position to an absolute offset, resolves
+/// the symbol from that one immutable snapshot, suppresses stale results, and
+/// formats the compiler-owned display text as LSP markup content. It owns no
+/// Cvolo semantics (§16, §24, §29.1).
+/// </summary>
+internal sealed class HoverHandler(ILspLogger logger, Func<DocumentStore> storeAccessor, Func<bool> markdownAccessor)
+{
+    private DocumentStore? _store;
+
+    // Resolved on first use so the session-scoped store is created from the
+    // workspace folders/root established by initialize, not at registration time.
+    private DocumentStore Store => _store ??= storeAccessor();
+
+    [JsonRpcMethod(Methods.TextDocumentHoverName, UseSingleObjectParameterDeserialization = true)]
+    public async Task<Hover?> Hover(TextDocumentPositionParams? parameters, CancellationToken cancellationToken)
+    {
+        if (parameters?.TextDocument is not { } textDocument)
+        {
+            logger.Debug("[hover] request without a textDocument; ignored.");
+            return null;
+        }
+
+        Position position = parameters.Position;
+
+        if (!TextDocumentSyncHandler.TryCreateDocumentUri(textDocument.Uri, out DocumentUri documentUri)
+            || !TextDocumentSyncHandler.IsCvoloDocument(documentUri))
+        {
+            logger.Debug($"[hover] non-cvolo document '{textDocument.Uri}' ignored.");
+            return null;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (!Store.TryCapture(documentUri, out SemanticRequestContext context))
+        {
+            logger.Debug($"[hover] '{documentUri}' is not open; no hover.");
+            return null;
+        }
+
+        var index = new LineIndex(context.Document.Text);
+        if (!index.TryGetOffset(new TextPosition(position.Line, position.Character), out int offset))
+        {
+            logger.Debug($"[hover] invalid request position {position.Line}:{position.Character} for '{documentUri}'.");
+            return null;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        BackendSymbolInfo? symbol;
+        try
+        {
+            symbol = await Task.Run(() => Store.GetSymbolAtPosition(context, offset), cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.Warning($"[hover] backend failure for '{documentUri}': {ex.Message}");
+            return null;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (!Store.IsCurrent(context))
+        {
+            logger.Debug($"[hover] discarded stale result for '{documentUri}'.");
+            return null;
+        }
+
+        return symbol is null ? null : Map(symbol, index, context.Document.Text.Length);
+    }
+
+    private Hover? Map(BackendSymbolInfo symbol, LineIndex index, int textLength)
+    {
+        TextSpan span = symbol.SubjectSpan;
+
+        // Never clamp or fabricate a subject range: a span that is outside the
+        // captured text or cannot be mapped is discarded (§16.2).
+        if (span.Start < 0 || span.Length < 0 || span.End > textLength)
+        {
+            logger.Debug("[hover] discarding result with an out-of-range subject span.");
+            return null;
+        }
+
+        if (!index.TryGetRange(span, out TextRange range))
+        {
+            logger.Debug("[hover] discarding result whose subject span cannot be mapped.");
+            return null;
+        }
+
+        return new Hover
+        {
+            Contents = FormatContents(symbol.DisplayText, symbol.Documentation),
+            Range = new LspRange
+            {
+                Start = new Position(range.Start.Line, range.Start.Character),
+                End = new Position(range.End.Line, range.End.Character),
+            },
+        };
+    }
+
+    private MarkupContent FormatContents(string displayText, string? documentation)
+    {
+        if (!markdownAccessor())
+        {
+            return new MarkupContent
+            {
+                Kind = MarkupKind.PlainText,
+                Value = string.IsNullOrEmpty(documentation) ? displayText : $"{displayText}\n\n{documentation}",
+            };
+        }
+
+        // Choose a backtick fence longer than any run present in the display text
+        // so the compiler-owned content can never break out of the code block (§16.3).
+        var fence = "```";
+        while (displayText.Contains(fence, StringComparison.Ordinal))
+        {
+            fence += "`";
+        }
+
+        var markdown = $"{fence}cvolo\n{displayText}\n{fence}";
+        if (!string.IsNullOrEmpty(documentation))
+        {
+            markdown += $"\n\n{documentation}";
+        }
+
+        return new MarkupContent
+        {
+            Kind = MarkupKind.Markdown,
+            Value = markdown,
+        };
+    }
+}

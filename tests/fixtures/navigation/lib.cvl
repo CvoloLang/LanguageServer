@@ -1,0 +1,3 @@
+int LibHelper() {
+    return 7;
+}

@@ -285,6 +285,148 @@ internal sealed class CvoloLanguageBackend(IReadOnlyList<string> workspaceFolder
             items);
     }
 
+    public BackendSymbolInfo? GetSymbolAtPosition(BackendSnapshot snapshot, BackendDocumentHandle document, int position)
+    {
+        var toolingSnapshot = ((ToolingBackendSnapshot)snapshot).Snapshot;
+        var documentId = ((CvoloDocumentHandle)document).DocumentId;
+
+        if (!toolingSnapshot.TryGetDocument(documentId, out DocumentSnapshot? toolingDocument))
+        {
+            // The handle does not belong to the supplied snapshot. Refuse rather
+            // than fabricate a symbol for a document we cannot see; the handler
+            // degrades the failure to a null response (§23).
+            throw new InvalidOperationException("The navigation document is not present in the captured snapshot.");
+        }
+
+        if (position < 0 || position > toolingDocument.Text.Length)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(position),
+                position,
+                "The navigation position is outside the captured document text.");
+        }
+
+        SymbolLookupResult? result = toolingDocument.GetSymbolAtPosition(position);
+        if (result is null)
+        {
+            return null;
+        }
+
+        return new BackendSymbolInfo(
+            new CvoloSymbolHandle(toolingSnapshot, result.SymbolId),
+            new CoreTextSpan(result.SubjectSpan.Start, result.SubjectSpan.Length),
+            result.Name,
+            MapSymbolKind(result.Kind),
+            result.DisplayText,
+            result.Documentation);
+    }
+
+    public BackendDefinitionResult GetDefinitions(BackendSnapshot snapshot, BackendSymbolHandle symbol)
+    {
+        var toolingSnapshot = ((ToolingBackendSnapshot)snapshot).Snapshot;
+        if (symbol is not CvoloSymbolHandle handle || !ReferenceEquals(handle.Snapshot, toolingSnapshot))
+        {
+            // A foreign or mismatched symbol handle must never resolve against the
+            // wrong snapshot; return no result rather than an unrelated symbol (§15).
+            return EmptyDefinitions;
+        }
+
+        IReadOnlyList<SymbolDefinition> definitions = toolingSnapshot.GetDefinitions(handle.SymbolId);
+        if (definitions.Count == 0)
+        {
+            return EmptyDefinitions;
+        }
+
+        var texts = new Dictionary<DocumentUri, string>();
+        var targets = new List<BackendDefinitionTarget>(definitions.Count);
+        foreach (SymbolDefinition definition in definitions)
+        {
+            if (!toolingSnapshot.TryGetDocument(definition.DocumentId, out DocumentSnapshot? targetDocument))
+            {
+                continue;
+            }
+
+            DocumentUri uri = ToDocumentUri(targetDocument.FilePath);
+            texts.TryAdd(uri, targetDocument.Text.ToString());
+            targets.Add(new BackendDefinitionTarget(
+                uri,
+                new CoreTextSpan(definition.Range.Start, definition.Range.Length),
+                new CoreTextSpan(definition.SelectionSpan.Start, definition.SelectionSpan.Length)));
+        }
+
+        return new BackendDefinitionResult(texts, targets);
+    }
+
+    public IReadOnlyList<BackendDocumentSymbol> GetDocumentSymbols(BackendSnapshot snapshot, BackendDocumentHandle document)
+    {
+        var toolingSnapshot = ((ToolingBackendSnapshot)snapshot).Snapshot;
+        var documentId = ((CvoloDocumentHandle)document).DocumentId;
+
+        if (!toolingSnapshot.TryGetDocument(documentId, out DocumentSnapshot? toolingDocument))
+        {
+            throw new InvalidOperationException("The document-symbol document is not present in the captured snapshot.");
+        }
+
+        IReadOnlyList<DocumentSymbolInfo> symbols = toolingDocument.GetDocumentSymbols();
+        var mapped = new List<BackendDocumentSymbol>(symbols.Count);
+        foreach (DocumentSymbolInfo symbol in symbols)
+        {
+            mapped.Add(MapDocumentSymbol(symbol));
+        }
+
+        return mapped;
+    }
+
+    private static BackendDocumentSymbol MapDocumentSymbol(DocumentSymbolInfo symbol)
+    {
+        var children = new List<BackendDocumentSymbol>(symbol.Children.Count);
+        foreach (DocumentSymbolInfo child in symbol.Children)
+        {
+            children.Add(MapDocumentSymbol(child));
+        }
+
+        return new BackendDocumentSymbol(
+            symbol.Name,
+            symbol.Detail,
+            MapSymbolKind(symbol.Kind),
+            new CoreTextSpan(symbol.Range.Start, symbol.Range.Length),
+            new CoreTextSpan(symbol.SelectionSpan.Start, symbol.SelectionSpan.Length),
+            children);
+    }
+
+    private static readonly BackendDefinitionResult EmptyDefinitions =
+        new(new Dictionary<DocumentUri, string>(), []);
+
+    private static BackendSymbolKind MapSymbolKind(ToolingSymbolKind kind)
+    {
+        return kind switch
+        {
+            ToolingSymbolKind.Namespace => BackendSymbolKind.Namespace,
+            ToolingSymbolKind.Module => BackendSymbolKind.Module,
+            ToolingSymbolKind.Struct => BackendSymbolKind.Struct,
+            ToolingSymbolKind.Union => BackendSymbolKind.Union,
+            ToolingSymbolKind.Enum => BackendSymbolKind.Enum,
+            ToolingSymbolKind.EnumMember => BackendSymbolKind.EnumMember,
+            ToolingSymbolKind.Interface => BackendSymbolKind.Interface,
+            ToolingSymbolKind.Protocol => BackendSymbolKind.Protocol,
+            ToolingSymbolKind.TypeAlias => BackendSymbolKind.TypeAlias,
+            ToolingSymbolKind.TypeParameter => BackendSymbolKind.TypeParameter,
+            ToolingSymbolKind.Function => BackendSymbolKind.Function,
+            ToolingSymbolKind.Method => BackendSymbolKind.Method,
+            ToolingSymbolKind.ExtensionMethod => BackendSymbolKind.ExtensionMethod,
+            ToolingSymbolKind.Constructor => BackendSymbolKind.Constructor,
+            ToolingSymbolKind.Destructor => BackendSymbolKind.Destructor,
+            ToolingSymbolKind.Field => BackendSymbolKind.Field,
+            ToolingSymbolKind.Parameter => BackendSymbolKind.Parameter,
+            ToolingSymbolKind.Local => BackendSymbolKind.Local,
+            ToolingSymbolKind.Global => BackendSymbolKind.Global,
+            ToolingSymbolKind.Constant => BackendSymbolKind.Constant,
+            ToolingSymbolKind.Operator => BackendSymbolKind.Operator,
+            ToolingSymbolKind.OtherType => BackendSymbolKind.OtherType,
+            _ => BackendSymbolKind.Unknown,
+        };
+    }
+
     /// <summary>
     /// Validates a Tooling replacement span against the captured text and cursor:
     /// it must be non-negative, lie within the text, and contain the request
@@ -368,4 +510,16 @@ internal sealed class ToolingBackendSnapshot(ProjectSnapshot snapshot, long gene
     public ProjectSnapshot Snapshot { get; } = snapshot;
 
     public long Generation { get; } = generation;
+}
+
+/// <summary>
+/// Opaque symbol handle backed by the tooling's snapshot-scoped SymbolId plus the
+/// tooling snapshot it was resolved from, so a handle can never resolve against a
+/// different snapshot.
+/// </summary>
+internal sealed class CvoloSymbolHandle(ProjectSnapshot snapshot, SymbolId symbolId) : BackendSymbolHandle
+{
+    public ProjectSnapshot Snapshot { get; } = snapshot;
+
+    public SymbolId SymbolId { get; } = symbolId;
 }

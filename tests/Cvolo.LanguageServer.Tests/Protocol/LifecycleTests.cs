@@ -35,8 +35,17 @@ public class LifecycleTests
         Assert.Contains(".", completion["triggerCharacters"]!.Values<string>());
         Assert.Contains("~", completion["triggerCharacters"]!.Values<string>());
 
-        Assert.Null(capabilities["definitionProvider"]);
-        Assert.Null(capabilities["hoverProvider"]);
+        Assert.Equal(true, capabilities["hoverProvider"]?.Value<bool>());
+        Assert.Equal(true, capabilities["definitionProvider"]?.Value<bool>());
+        Assert.Equal(true, capabilities["documentSymbolProvider"]?.Value<bool>());
+
+        // Unimplemented navigation capabilities remain absent (LSP-4 §7.1).
+        Assert.Null(capabilities["workspaceSymbolProvider"]);
+        Assert.Null(capabilities["declarationProvider"]);
+        Assert.Null(capabilities["typeDefinitionProvider"]);
+        Assert.Null(capabilities["implementationProvider"]);
+        Assert.Null(capabilities["referencesProvider"]);
+        Assert.Null(capabilities["renameProvider"]);
         Assert.Null(capabilities["semanticTokensProvider"]);
         Assert.Null(capabilities["documentFormattingProvider"]);
 

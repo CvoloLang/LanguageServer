@@ -25,6 +25,9 @@ internal sealed class LanguageServer(
     private DocumentStore? _store;
     private TextDocumentSyncHandler? _sync;
     private CompletionHandler? _completion;
+    private HoverHandler? _hover;
+    private DefinitionHandler? _definition;
+    private DocumentSymbolHandler? _documentSymbols;
     private Timer? _deadClientExitTimer;
 
     /// <summary>
@@ -49,6 +52,21 @@ internal sealed class LanguageServer(
     /// textDocument/completion handler.
     /// </summary>
     internal CompletionHandler Completion => _completion ??= new CompletionHandler(logger, () => Store);
+
+    /// <summary>
+    /// textDocument/hover handler.
+    /// </summary>
+    internal HoverHandler Hover => _hover ??= new HoverHandler(logger, () => Store, () => _state.HoverPrefersMarkdown);
+
+    /// <summary>
+    /// textDocument/definition handler.
+    /// </summary>
+    internal DefinitionHandler Definition => _definition ??= new DefinitionHandler(logger, () => Store);
+
+    /// <summary>
+    /// textDocument/documentSymbol handler.
+    /// </summary>
+    internal DocumentSymbolHandler DocumentSymbols => _documentSymbols ??= new DocumentSymbolHandler(logger, () => Store, () => _state.HierarchicalDocumentSymbols);
 
     public InitializeResponse Initialize(InitializeRequestParams? initializeParams)
     {
@@ -127,6 +145,9 @@ internal sealed class LanguageServer(
                     ResolveProvider = false,
                     TriggerCharacters = [".", "~"],
                 },
+                HoverProvider = true,
+                DefinitionProvider = true,
+                DocumentSymbolProvider = true,
             },
             new ServerInfo(ServerMetadata.ServerName, ServerMetadata.ServerVersion));
     }
