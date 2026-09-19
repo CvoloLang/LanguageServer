@@ -1,3 +1,5 @@
+using Cvolo.LanguageServer.Core;
+using Cvolo.LanguageServer.Cvolo;
 using Cvolo.LanguageServer.Diagnostics;
 using Cvolo.LanguageServer.Logging;
 using Microsoft.VisualStudio.LanguageServer.Protocol;
@@ -11,12 +13,18 @@ namespace Cvolo.LanguageServer.Protocol;
 /// one handler is contained by StreamJsonRpc (converted to a JSON-RPC error
 /// response) and never kills the process when the protocol state is valid.
 /// </summary>
-internal sealed class LanguageServer(TerminationRequest termination, ILspLogger logger, IClientProcessWatcher clientWatcher) : IDisposable
+internal sealed class LanguageServer(
+    TerminationRequest termination,
+    ILspLogger logger,
+    IClientProcessWatcher clientWatcher,
+    Func<DocumentStore>? storeFactory = null) : IDisposable
 {
     private readonly SessionState _state = new();
     private readonly DiagnosticSink _diagnostics = new(logger);
     private readonly CancellationTokenSource _sessionCancellation = new();
+    private DocumentStore? _store;
     private TextDocumentSyncHandler? _sync;
+    private CompletionHandler? _completion;
     private Timer? _deadClientExitTimer;
 
     /// <summary>
@@ -26,9 +34,21 @@ internal sealed class LanguageServer(TerminationRequest termination, ILspLogger 
     internal DiagnosticSink Diagnostics => _diagnostics;
 
     /// <summary>
+    /// Session-scoped document store shared by every semantic handler. The
+    /// workspace folders and fallback root from initialize are fixed for the
+    /// session, so the store is built once on first use.
+    /// </summary>
+    internal DocumentStore Store => _store ??= CreateStore();
+
+    /// <summary>
     /// Text document synchronization (didOpen/didChange/didClose) handler.
     /// </summary>
-    internal TextDocumentSyncHandler Sync => _sync ??= new TextDocumentSyncHandler(logger, _diagnostics, () => _state.WorkspaceFolders, () => _state.WorkspaceRoot);
+    internal TextDocumentSyncHandler Sync => _sync ??= new TextDocumentSyncHandler(logger, _diagnostics, () => Store);
+
+    /// <summary>
+    /// textDocument/completion handler.
+    /// </summary>
+    internal CompletionHandler Completion => _completion ??= new CompletionHandler(logger, () => Store);
 
     public InitializeResponse Initialize(InitializeRequestParams? initializeParams)
     {
@@ -102,6 +122,11 @@ internal sealed class LanguageServer(TerminationRequest termination, ILspLogger 
                     OpenClose = true,
                     Change = TextDocumentSyncKind.Incremental,
                 },
+                CompletionProvider = new CompletionOptions
+                {
+                    ResolveProvider = false,
+                    TriggerCharacters = [".", "~"],
+                },
             },
             new ServerInfo(ServerMetadata.ServerName, ServerMetadata.ServerVersion));
     }
@@ -152,6 +177,35 @@ internal sealed class LanguageServer(TerminationRequest termination, ILspLogger 
     public void HandleSetTrace(SetTraceParams? parameters)
     {
         logger.Verbose($"$/setTrace: {parameters?.Value}");
+    }
+
+    private DocumentStore CreateStore()
+    {
+        // Test seam: when supplied, the session uses the provided store instead of
+        // building the production Cvolo-backed one.
+        if (storeFactory is not null)
+        {
+            return storeFactory();
+        }
+
+        IReadOnlyList<string> folders = _state.WorkspaceFolders;
+        var root = _state.WorkspaceRoot;
+
+        if (folders.Count > 0)
+        {
+            logger.Info($"Document synchronization active; {folders.Count} workspace folder(s).");
+        }
+        else if (root is not null)
+        {
+            logger.Info($"Document synchronization active; workspace root '{root}'.");
+        }
+        else
+        {
+            logger.Info("Document synchronization active; no workspace root (project discovery is unbounded).");
+        }
+
+        CoreLoggerBridge coreLogger = new(logger);
+        return new DocumentStore(new CvoloLanguageBackend(folders, root, coreLogger), coreLogger);
     }
 
     private void OnClientTerminated()

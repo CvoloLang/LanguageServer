@@ -69,7 +69,7 @@ if ([string]::IsNullOrWhiteSpace($toolingVersion)) {
     Write-Err "tooling.version is missing or empty under $RepoRoot"
     exit 1
 }
-if ($toolingVersion -notmatch '^\d+\.\d+\.\d+([\-+][0-9A-Za-z.\-]+)?$') {
+if ($toolingVersion -notmatch '^\d+\.\d+\.\d+(\.\d+)?([\-+][0-9A-Za-z.\-]+)?$') {
     Write-Err "tooling.version '$toolingVersion' is not a pinned concrete version"
     exit 1
 }

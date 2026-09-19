@@ -1,4 +1,5 @@
 using Cvolo.LanguageServer.Core.Backend;
+using Cvolo.LanguageServer.Core.Completion;
 using Cvolo.LanguageServer.Core.Diagnostics;
 using Cvolo.LanguageServer.Core.Documents;
 using Cvolo.LanguageServer.Core.Editing;
@@ -169,22 +170,25 @@ internal sealed class DocumentStore(ILanguageBackend backend, ICoreLogger? logge
     /// </summary>
     public bool TryCapture(DocumentUri uri, out SemanticRequestContext context)
     {
-        if (_documents.TryGetValue(uri, out DocumentEntry? current))
+        lock (_publicationGate)
         {
-            DocumentState state = current.State;
-            BackendSnapshot currentProjectSnapshot = backend.CaptureCurrentSnapshot(current.Project);
-            context = new SemanticRequestContext(
-                state.Uri,
-                state.SessionId,
-                state.Version,
-                state,
-                current.Project,
-                currentProjectSnapshot);
-            return true;
-        }
+            if (_documents.TryGetValue(uri, out DocumentEntry? current))
+            {
+                DocumentState state = current.State;
+                BackendSnapshot currentProjectSnapshot = backend.CaptureCurrentSnapshot(current.Project);
+                context = new SemanticRequestContext(
+                    state.Uri,
+                    state.SessionId,
+                    state.Version,
+                    state,
+                    current.Project,
+                    currentProjectSnapshot);
+                return true;
+            }
 
-        context = default;
-        return false;
+            context = default;
+            return false;
+        }
     }
 
     /// <summary>Returns the backend project hosting an open document.</summary>
@@ -257,6 +261,19 @@ internal sealed class DocumentStore(ILanguageBackend backend, ICoreLogger? logge
     }
 
     /// <summary>
+    /// Whole-context freshness for a captured semantic request: the document
+    /// must still be open in the same session, version and project, and the
+    /// captured project snapshot must still be the backend's current snapshot.
+    /// A result computed from a context that fails this check must be discarded
+    /// (§10, §16.6, §30).
+    /// </summary>
+    public bool IsCurrent(SemanticRequestContext context)
+    {
+        return IsCurrent(context.Uri, context.SessionId, context.Version, context.Project)
+            && backend.IsCurrentSnapshot(context.Project, context.CurrentProjectSnapshot);
+    }
+
+    /// <summary>
     /// Atomically commits a captured diagnostic run. Under the store's
     /// publication gate the captured project snapshot is re-validated as current
     /// and the targets are filtered to those still fresh (same URI, session,
@@ -294,6 +311,19 @@ internal sealed class DocumentStore(ILanguageBackend backend, ICoreLogger? logge
     public BackendDiagnosticRun GetDiagnostics(BackendSnapshot snapshot, IReadOnlyList<BackendDocumentHandle> targets)
     {
         return backend.GetDiagnostics(snapshot, targets);
+    }
+
+    /// <summary>
+    /// Computes backend-neutral completion candidates for the document captured
+    /// in <paramref name="context"/> at <paramref name="position"/> (an absolute
+    /// UTF-16 code-unit offset) from the document's own coherent snapshot, so
+    /// the replacement span is always valid over the exact text the position
+    /// refers to (§17, §30). Callers must discard the result unless
+    /// <see cref="IsCurrent(SemanticRequestContext)"/> still holds.
+    /// </summary>
+    public BackendCompletionResult GetCompletions(SemanticRequestContext context, int position)
+    {
+        return backend.GetCompletions(context.Document.BackendSnapshot, context.Document.BackendDocument, position);
     }
 
     /// <summary>Ties together the published state and the backend tokens that produced it.</summary>

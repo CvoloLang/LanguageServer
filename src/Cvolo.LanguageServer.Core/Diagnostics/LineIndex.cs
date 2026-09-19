@@ -55,6 +55,35 @@ internal sealed class LineIndex
     }
 
     /// <summary>
+    /// Maps a zero-based line/character position back to an absolute offset.
+    /// UTF-16 code units, zero-based, matching <see cref="TryGetPosition"/>.
+    /// A negative or out-of-range line fails, as does a character past a line's
+    /// visible end (a position on or inside a terminator is not a character).
+    /// The end-of-line position maps to the start of the terminator.
+    /// </summary>
+    public bool TryGetOffset(TextPosition position, out int offset)
+    {
+        var line = position.Line;
+        var character = position.Character;
+        if (line < 0 || line >= _lineStarts.Length)
+        {
+            offset = 0;
+            return false;
+        }
+
+        var lineStart = _lineStarts[line];
+        var visibleEnd = _lineContentEnds[line];
+        if (character < 0 || character > visibleEnd - lineStart)
+        {
+            offset = 0;
+            return false;
+        }
+
+        offset = lineStart + character;
+        return true;
+    }
+
+    /// <summary>
     /// Maps a span to a range. Fails when the span is negative or extends past
     /// the end of the text; never clamps a malformed span into a fabricated
     /// position.
@@ -77,6 +106,9 @@ internal sealed class LineIndex
         return true;
     }
 
+    /// <summary>
+    /// Builds the line/paragraph tables for a given text.
+    /// </summary>
     private static (int[] Starts, int[] ContentEnds) BuildLines(string text)
     {
         var starts = new List<int> { 0 };

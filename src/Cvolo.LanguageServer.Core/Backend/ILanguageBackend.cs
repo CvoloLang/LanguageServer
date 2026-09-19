@@ -1,3 +1,4 @@
+using Cvolo.LanguageServer.Core.Completion;
 using Cvolo.LanguageServer.Core.Diagnostics;
 using Cvolo.LanguageServer.Core.Documents;
 
@@ -75,4 +76,17 @@ internal interface ILanguageBackend
     /// one project analysis backs the whole result.
     /// </summary>
     BackendDiagnosticRun GetDiagnostics(BackendSnapshot snapshot, IReadOnlyList<BackendDocumentHandle> targets);
+
+    /// <summary>
+    /// Computes backend-neutral completion candidates for
+    /// <paramref name="document"/> at <paramref name="position"/> (an absolute
+    /// UTF-16 code-unit offset over the captured snapshot text) from the one
+    /// coherent <paramref name="snapshot"/>. The returned replacement span must
+    /// be a valid span over that same snapshot text that contains
+    /// <paramref name="position"/> (§4.5, §7, §17). Implementations must never
+    /// degrade to an unfiltered global list when triggered by a bare '.', never
+    /// fabricate a replacement span, and never produce stale or cross-generation
+    /// results (§4.4, §16.6, §30).
+    /// </summary>
+    BackendCompletionResult GetCompletions(BackendSnapshot snapshot, BackendDocumentHandle document, int position);
 }

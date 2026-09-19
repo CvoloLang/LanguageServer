@@ -18,4 +18,9 @@ internal static class TextCoordinateMapper
     {
         return new LineIndex(text).TryGetRange(span, out range);
     }
+
+    public static bool TryGetOffset(string text, TextPosition position, out int offset)
+    {
+        return new LineIndex(text).TryGetOffset(position, out offset);
+    }
 }

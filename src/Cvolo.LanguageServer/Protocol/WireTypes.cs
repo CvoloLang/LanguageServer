@@ -10,6 +10,31 @@ namespace Cvolo.LanguageServer.Protocol;
 internal sealed record InitializeResponse(ServerCapabilities Capabilities, ServerInfo ServerInfo);
 
 /// <summary>
+/// LSP 3.17 server capabilities advertised by this server. Defined locally
+/// because the protocol library marks <c>CompletionOptions.ResolveProvider</c>
+/// with <c>EmitDefaultValue = false</c>, which silently drops an explicit
+/// <c>resolveProvider: false</c> from the wire; LSP-3 requires it advertised
+/// (§6.1).
+/// </summary>
+internal sealed record ServerCapabilities
+{
+    public TextDocumentSyncOptions? TextDocumentSync { get; init; }
+
+    public CompletionOptions? CompletionProvider { get; init; }
+}
+
+/// <summary>
+/// LSP 3.17 <c>completionProvider</c> options. A local shape so
+/// <c>resolveProvider</c> is always serialized, including when it is false.
+/// </summary>
+internal sealed record CompletionOptions
+{
+    public bool ResolveProvider { get; init; }
+
+    public string[]? TriggerCharacters { get; init; }
+}
+
+/// <summary>
 /// LSP 3.17 <c>ServerInfo</c>.
 /// </summary>
 internal sealed record ServerInfo(string Name, string Version);

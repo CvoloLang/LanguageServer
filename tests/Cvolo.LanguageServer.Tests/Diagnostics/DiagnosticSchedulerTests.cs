@@ -1,5 +1,6 @@
 using Cvolo.LanguageServer.Core;
 using Cvolo.LanguageServer.Core.Backend;
+using Cvolo.LanguageServer.Core.Completion;
 using Cvolo.LanguageServer.Core.Diagnostics;
 using Cvolo.LanguageServer.Core.Documents;
 using Cvolo.LanguageServer.Diagnostics;
@@ -476,6 +477,11 @@ public class DiagnosticSchedulerTests
             }
 
             return OnGetDiagnostics?.Invoke(snapshot, targets) ?? EmptyRun(snapshot);
+        }
+
+        public BackendCompletionResult GetCompletions(BackendSnapshot snapshot, BackendDocumentHandle document, int position)
+        {
+            return new BackendCompletionResult(new TextSpan(position, 0), []);
         }
     }
 

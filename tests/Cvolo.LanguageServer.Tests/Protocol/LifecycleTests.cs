@@ -30,7 +30,11 @@ public class LifecycleTests
         Assert.Equal(2, sync["change"]?.Value<int>());
         Assert.Null(sync["save"]);
 
-        Assert.Null(capabilities["completionProvider"]);
+        var completion = (JObject)capabilities["completionProvider"]!;
+        Assert.False(completion["resolveProvider"]!.Value<bool>());
+        Assert.Contains(".", completion["triggerCharacters"]!.Values<string>());
+        Assert.Contains("~", completion["triggerCharacters"]!.Values<string>());
+
         Assert.Null(capabilities["definitionProvider"]);
         Assert.Null(capabilities["hoverProvider"]);
         Assert.Null(capabilities["semanticTokensProvider"]);

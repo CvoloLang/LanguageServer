@@ -1,7 +1,6 @@
 using Cvolo.LanguageServer.Core;
 using Cvolo.LanguageServer.Core.Backend;
 using Cvolo.LanguageServer.Core.Documents;
-using Cvolo.LanguageServer.Cvolo;
 using Cvolo.LanguageServer.Diagnostics;
 using Cvolo.LanguageServer.Logging;
 using Microsoft.VisualStudio.LanguageServer.Protocol;
@@ -12,15 +11,14 @@ namespace Cvolo.LanguageServer.Protocol;
 
 /// <summary>
 /// textDocument/didOpen, didChange and didClose handler. Converts wire payloads
-/// into core documents, feeds the <see cref="DocumentStore"/>, schedules
-/// diagnostics, and never emits responses. All failures are non-fatal: the
-/// server stays alive and simply does not publish state.
+/// into core documents, feeds the session-scoped <see cref="DocumentStore"/>,
+/// schedules diagnostics, and never emits responses. All failures are
+/// non-fatal: the server stays alive and simply does not publish state.
 /// </summary>
 internal sealed class TextDocumentSyncHandler(
     ILspLogger logger,
     DiagnosticSink diagnostics,
-    Func<IReadOnlyList<string>> workspaceFolders,
-    Func<string?> workspaceRoot) : IDisposable
+    Func<DocumentStore> storeAccessor) : IDisposable
 {
     private const string CvoloLanguageId = "cvolo";
 
@@ -28,11 +26,9 @@ internal sealed class TextDocumentSyncHandler(
     private DiagnosticPublisher? _publisher;
     private DiagnosticScheduler? _scheduler;
 
-    /// <summary>
-    /// Lazily-built store; the workspace folders and fallback root from
-    /// initialize are fixed for the session.
-    /// </summary>
-    internal DocumentStore Store => _store ??= CreateStore();
+    // Resolved on first use so the session-scoped store is created from the
+    // workspace folders/root established by initialize, not at registration time.
+    private DocumentStore Store => _store ??= storeAccessor();
 
     private DiagnosticPublisher Publisher => _publisher ??= new DiagnosticPublisher(logger, diagnostics);
 
@@ -167,28 +163,6 @@ internal sealed class TextDocumentSyncHandler(
         _scheduler?.Dispose();
     }
 
-    private DocumentStore CreateStore()
-    {
-        IReadOnlyList<string> folders = workspaceFolders();
-        var root = workspaceRoot();
-
-        if (folders.Count > 0)
-        {
-            logger.Info($"Document synchronization active; {folders.Count} workspace folder(s).");
-        }
-        else if (root is not null)
-        {
-            logger.Info($"Document synchronization active; workspace root '{root}'.");
-        }
-        else
-        {
-            logger.Info("Document synchronization active; no workspace root (project discovery is unbounded).");
-        }
-
-        CoreLoggerBridge coreLogger = new(logger);
-        return new DocumentStore(new CvoloLanguageBackend(folders, root, coreLogger), coreLogger);
-    }
-
     internal static bool TryCreateDocumentUri(Uri? uri, out DocumentUri documentUri)
     {
         if (uri is { IsAbsoluteUri: true } && string.Equals(uri.Scheme, Uri.UriSchemeFile, StringComparison.OrdinalIgnoreCase))
@@ -224,7 +198,7 @@ internal sealed class TextDocumentSyncHandler(
         return false;
     }
 
-    private static bool IsCvoloDocument(DocumentUri documentUri)
+    internal static bool IsCvoloDocument(DocumentUri documentUri)
     {
         var extension = Path.GetExtension(documentUri.LocalPath);
         return string.Equals(extension, ".cvl", StringComparison.OrdinalIgnoreCase);

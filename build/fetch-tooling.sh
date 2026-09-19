@@ -43,7 +43,7 @@ if [ -z "$TOOLING_VERSION" ]; then
     err "tooling.version is missing or empty under $REPO_ROOT"
     exit 1
 fi
-if ! [[ "$TOOLING_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
+if ! [[ "$TOOLING_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?([-+][0-9A-Za-z.-]+)?$ ]]; then
     err "tooling.version '$TOOLING_VERSION' is not a pinned concrete version"
     exit 1
 fi

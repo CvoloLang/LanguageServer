@@ -1,4 +1,5 @@
 using Cvolo.LanguageServer.Core.Backend;
+using Cvolo.LanguageServer.Core.Completion;
 using Cvolo.LanguageServer.Core.Diagnostics;
 using Cvolo.LanguageServer.Core.Documents;
 using Cvolo.LanguageServer.Core.Logging;
@@ -46,6 +47,11 @@ internal sealed class CvoloLanguageBackend(IReadOnlyList<string> workspaceFolder
     }
 
     public BackendDiagnosticRun GetDiagnostics(BackendSnapshot snapshot, IReadOnlyList<BackendDocumentHandle> targets)
+    {
+        throw new InvalidOperationException("Cvolo compiler tooling is unavailable.");
+    }
+
+    public BackendCompletionResult GetCompletions(BackendSnapshot snapshot, BackendDocumentHandle document, int position)
     {
         throw new InvalidOperationException("Cvolo compiler tooling is unavailable.");
     }

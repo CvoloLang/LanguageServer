@@ -1,5 +1,6 @@
 using Cvolo.LanguageServer.Core;
 using Cvolo.LanguageServer.Core.Backend;
+using Cvolo.LanguageServer.Core.Completion;
 using Cvolo.LanguageServer.Core.Diagnostics;
 using Cvolo.LanguageServer.Core.Documents;
 using Cvolo.LanguageServer.Core.Logging;
@@ -296,6 +297,22 @@ public class DocumentStoreTests
         return new TextRange(new TextPosition(startLine, startChar), new TextPosition(endLine, endChar));
     }
 
+    [Fact]
+    public void GetCompletions_ForwardsCapturedSnapshotAndPosition()
+    {
+        var (store, _, _) = NewStore();
+        Assert.NotNull(store.Open(A, "cvolo", 1, "text"));
+
+        Assert.True(store.TryCapture(A, out SemanticRequestContext context));
+        BackendCompletionResult result = store.GetCompletions(context, 2);
+
+        Assert.Equal(new TextSpan(2, 0), result.ReplacementSpan);
+        Assert.True(store.IsCurrent(context));
+
+        Assert.NotNull(store.ApplyChanges(A, 2, [new DocumentChange(null, "new text")]));
+        Assert.False(store.IsCurrent(context));
+    }
+
     private sealed class FakeBackend : ILanguageBackend
     {
         private readonly object _gate = new();
@@ -379,6 +396,11 @@ public class DocumentStoreTests
         public BackendDiagnosticRun GetDiagnostics(BackendSnapshot snapshot, IReadOnlyList<BackendDocumentHandle> targets)
         {
             return new BackendDiagnosticRun(new Dictionary<DocumentUri, string>(), []);
+        }
+
+        public BackendCompletionResult GetCompletions(BackendSnapshot snapshot, BackendDocumentHandle document, int position)
+        {
+            return new BackendCompletionResult(new TextSpan(position, 0), []);
         }
 
         public string? TextOf(DocumentUri document)

@@ -27,8 +27,8 @@ internal sealed class ServerHost : IDisposable
     /// <summary>Test-only view of whether the hosted server accepted 'initialized'.</summary>
     public bool InitializedReceived => _server.InitializedReceived;
 
-    /// <summary>The document store behind the sync handler (created on first use).</summary>
-    public DocumentStore Store => _server.Sync.Store;
+    /// <summary>The session-scoped document store (created on first use).</summary>
+    public DocumentStore Store => _server.Store;
 
     /// <summary>The diagnostic notification sink used by the hosted server.</summary>
     public DiagnosticSink Diagnostics => _server.Diagnostics;
@@ -42,10 +42,10 @@ internal sealed class ServerHost : IDisposable
         Termination = termination;
     }
 
-    public static ServerHost Start(DuplexTestTransport transport, ILspLogger? logger = null, IClientProcessWatcher? watcher = null, Action<JsonRpc>? configureRpc = null)
+    public static ServerHost Start(DuplexTestTransport transport, ILspLogger? logger = null, IClientProcessWatcher? watcher = null, Action<JsonRpc>? configureRpc = null, Func<DocumentStore>? storeFactory = null)
     {
         TerminationRequest termination = new();
-        LanguageServerImpl server = new(termination, logger ?? new NullLspLogger(), watcher ?? new FakeClientProcessWatcher());
+        LanguageServerImpl server = new(termination, logger ?? new NullLspLogger(), watcher ?? new FakeClientProcessWatcher(), storeFactory);
         RecordingStream serverOutput = new(transport.ServerOutput);
         JsonMessageFormatter formatter = new();
         formatter.JsonSerializer.ContractResolver = new CamelCasePropertyNamesContractResolver();
@@ -60,6 +60,11 @@ internal sealed class ServerHost : IDisposable
             UseSingleObjectParameterDeserialization = true,
         });
         rpc.AddLocalRpcTarget(server.Sync, new JsonRpcTargetOptions
+        {
+            MethodNameTransform = m => m.Length == 0 ? m : char.ToLowerInvariant(m[0]) + m.Substring(1),
+            UseSingleObjectParameterDeserialization = true,
+        });
+        rpc.AddLocalRpcTarget(server.Completion, new JsonRpcTargetOptions
         {
             MethodNameTransform = m => m.Length == 0 ? m : char.ToLowerInvariant(m[0]) + m.Substring(1),
             UseSingleObjectParameterDeserialization = true,

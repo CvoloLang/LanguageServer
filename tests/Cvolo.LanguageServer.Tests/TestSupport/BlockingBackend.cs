@@ -1,0 +1,141 @@
+using Cvolo.LanguageServer.Core.Backend;
+using Cvolo.LanguageServer.Core.Completion;
+using Cvolo.LanguageServer.Core.Diagnostics;
+using Cvolo.LanguageServer.Core.Documents;
+
+namespace Cvolo.LanguageServer.Tests.TestSupport;
+
+/// <summary>
+/// Deterministic fake backend for completion concurrency tests. Completion can be
+/// armed to block until released, so stale/cancel races are reproducible without
+/// sleeps. Projects are keyed by directory so documents in one directory share a
+/// project generation, matching the real adapter's project semantics.
+/// </summary>
+internal sealed class BlockingBackend : ILanguageBackend
+{
+    private readonly object _gate = new();
+    private readonly Dictionary<string, FakeProject> _projects = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ManualResetEventSlim _block = new(initialState: true);
+    private readonly ManualResetEventSlim _entered = new(initialState: false);
+
+    /// <summary>When true, a completion call throws an ordinary exception.</summary>
+    public bool ThrowOnCompletion { get; set; }
+
+    public int CompletionCalls;
+
+    public IReadOnlyList<BackendCompletionItem> CannedItems { get; set; } =
+        [new BackendCompletionItem("canned", "canned", BackendCompletionKind.Local)];
+
+    /// <summary>When set, replaces the canned result; used to feed malformed spans.</summary>
+    public Func<int, BackendCompletionResult>? CompletionResultFactory { get; set; }
+
+    /// <summary>Arms the next completion call to block until <see cref="Release"/>.</summary>
+    public void Arm()
+    {
+        _entered.Reset();
+        _block.Reset();
+    }
+
+    /// <summary>Lets a blocked completion call finish.</summary>
+    public void Release()
+    {
+        _block.Set();
+    }
+
+    /// <summary>Waits until a completion call has entered the backend.</summary>
+    public bool WaitUntilEntered(TimeSpan timeout)
+    {
+        return _entered.Wait(timeout);
+    }
+
+    public BackendProject? OpenProject(DocumentUri document)
+    {
+        lock (_gate)
+        {
+            string directory = Path.GetDirectoryName(document.LocalPath) ?? document.LocalPath;
+            if (!_projects.TryGetValue(directory, out FakeProject? project))
+            {
+                project = new FakeProject();
+                _projects[directory] = project;
+            }
+
+            return project;
+        }
+    }
+
+    public bool TryResolveDocument(BackendProject project, DocumentUri document, out BackendDocumentHandle handle)
+    {
+        handle = new FakeHandle(document);
+        return true;
+    }
+
+    public BackendSnapshot UpdateDocument(BackendProject project, BackendDocumentHandle handle, string text)
+    {
+        lock (_gate)
+        {
+            var fake = (FakeProject)project;
+            fake.Generation++;
+            fake.Current = new FakeSnapshot(fake.Generation);
+            return fake.Current;
+        }
+    }
+
+    public BackendSnapshot RestoreBaseline(BackendProject project, BackendDocumentHandle handle)
+    {
+        return UpdateDocument(project, handle, string.Empty);
+    }
+
+    public BackendSnapshot CaptureCurrentSnapshot(BackendProject project)
+    {
+        lock (_gate)
+        {
+            return ((FakeProject)project).Current;
+        }
+    }
+
+    public bool IsCurrentSnapshot(BackendProject project, BackendSnapshot snapshot)
+    {
+        lock (_gate)
+        {
+            return ((FakeSnapshot)snapshot).Generation == ((FakeProject)project).Generation;
+        }
+    }
+
+    public BackendDiagnosticRun GetDiagnostics(BackendSnapshot snapshot, IReadOnlyList<BackendDocumentHandle> targets)
+    {
+        return new BackendDiagnosticRun(new Dictionary<DocumentUri, string>(), []);
+    }
+
+    public BackendCompletionResult GetCompletions(BackendSnapshot snapshot, BackendDocumentHandle document, int position)
+    {
+        Interlocked.Increment(ref CompletionCalls);
+        _entered.Set();
+        _block.Wait();
+
+        if (ThrowOnCompletion)
+        {
+            throw new InvalidOperationException("simulated completion failure");
+        }
+
+        return CompletionResultFactory is { } factory
+            ? factory(position)
+            : new BackendCompletionResult(new TextSpan(position, 0), CannedItems);
+    }
+
+    private sealed class FakeProject : BackendProject
+    {
+        public long Generation;
+
+        public FakeSnapshot Current = new(0);
+    }
+
+    private sealed class FakeSnapshot(long generation) : BackendSnapshot
+    {
+        public long Generation { get; } = generation;
+    }
+
+    private sealed class FakeHandle(DocumentUri uri) : BackendDocumentHandle
+    {
+        public DocumentUri Uri { get; } = uri;
+    }
+}

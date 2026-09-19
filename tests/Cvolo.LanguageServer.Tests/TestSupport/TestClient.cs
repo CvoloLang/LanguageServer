@@ -77,6 +77,29 @@ internal sealed class TestClient : IDisposable
         });
     }
 
+    public Task<CompletionList?> CompletionAsync(Uri uri, int line, int character)
+    {
+        return _rpc.InvokeWithParameterObjectAsync<CompletionList?>(
+            Methods.TextDocumentCompletionName,
+            new CompletionParams
+            {
+                TextDocument = new TextDocumentIdentifier { Uri = uri },
+                Position = new Position { Line = line, Character = character },
+            });
+    }
+
+    public Task<CompletionList?> CompletionWithTokenAsync(Uri uri, int line, int character, CancellationToken cancellationToken)
+    {
+        return _rpc.InvokeWithParameterObjectAsync<CompletionList?>(
+            Methods.TextDocumentCompletionName,
+            new CompletionParams
+            {
+                TextDocument = new TextDocumentIdentifier { Uri = uri },
+                Position = new Position { Line = line, Character = character },
+            },
+            cancellationToken);
+    }
+
     /// <summary>
     /// Round-trips an unknown method so any notification sent before it is
     /// guaranteed to have been dispatched by the server before this returns.

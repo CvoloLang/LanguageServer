@@ -186,9 +186,131 @@ public class LineIndexTests
         Assert.Equal(new TextPosition(0, 6), range.End);
     }
 
+    [Fact]
+    public void TryGetOffset_Lf_BeginningContentAndEndOfLine()
+    {
+        var index = new LineIndex("abc\ndef");
+
+        Assert.Equal(0, Offset(index, 0, 0));
+        Assert.Equal(1, Offset(index, 0, 1));
+        Assert.Equal(3, Offset(index, 0, 3));
+        Assert.False(index.TryGetOffset(new TextPosition(0, 4), out _));
+        Assert.Equal(4, Offset(index, 1, 0));
+        Assert.Equal(7, Offset(index, 1, 3));
+        Assert.False(index.TryGetOffset(new TextPosition(1, 4), out _));
+    }
+
+    [Fact]
+    public void TryGetOffset_CrLf_RejectsCharacterInsideTerminator()
+    {
+        // LSP characters are boundaries in the visible line content, never the
+        // CR/LF terminator code units (§8): "a\r\nb" has (0,1) as end-of-line,
+        // (0,2) is invalid, and line 1 starts at offset 3.
+        var index = new LineIndex("a\r\nb");
+
+        Assert.Equal(0, Offset(index, 0, 0));
+        Assert.Equal(1, Offset(index, 0, 1));
+        Assert.False(index.TryGetOffset(new TextPosition(0, 2), out _));
+        Assert.Equal(3, Offset(index, 1, 0));
+        Assert.Equal(4, Offset(index, 1, 1));
+        Assert.False(index.TryGetOffset(new TextPosition(1, 2), out _));
+    }
+
+    [Fact]
+    public void TryGetOffset_LoneCr_RejectsCharacterInsideTerminator()
+    {
+        var index = new LineIndex("a\rb");
+
+        Assert.Equal(0, Offset(index, 0, 0));
+        Assert.Equal(1, Offset(index, 0, 1));
+        Assert.False(index.TryGetOffset(new TextPosition(0, 2), out _));
+        Assert.Equal(2, Offset(index, 1, 0));
+        Assert.Equal(3, Offset(index, 1, 1));
+        Assert.False(index.TryGetOffset(new TextPosition(1, 2), out _));
+    }
+
+    [Fact]
+    public void TryGetOffset_EmptyString_HasOnlyOrigin()
+    {
+        var index = new LineIndex(string.Empty);
+
+        Assert.Equal(0, Offset(index, 0, 0));
+        Assert.False(index.TryGetOffset(new TextPosition(0, 1), out _));
+        Assert.False(index.TryGetOffset(new TextPosition(1, 0), out _));
+    }
+
+    [Fact]
+    public void TryGetOffset_EmptyLine_ResolvesOnlyOrigin()
+    {
+        var index = new LineIndex("a\n\nb");
+
+        Assert.Equal(2, Offset(index, 1, 0));
+        Assert.False(index.TryGetOffset(new TextPosition(1, 1), out _));
+        Assert.Equal(3, Offset(index, 2, 0));
+    }
+
+    [Fact]
+    public void TryGetOffset_TrailingNewline_HasEmptyFinalLine()
+    {
+        var index = new LineIndex("a\n");
+
+        Assert.Equal(2, Offset(index, 1, 0));
+        Assert.False(index.TryGetOffset(new TextPosition(1, 1), out _));
+    }
+
+    [Fact]
+    public void TryGetOffset_RejectsNegativeAndOutOfRange()
+    {
+        var index = new LineIndex("abc");
+
+        Assert.False(index.TryGetOffset(new TextPosition(-1, 0), out _));
+        Assert.False(index.TryGetOffset(new TextPosition(1, 0), out _));
+        Assert.False(index.TryGetOffset(new TextPosition(0, -1), out _));
+        Assert.False(index.TryGetOffset(new TextPosition(0, 4), out _));
+    }
+
+    [Fact]
+    public void TryGetOffset_SurrogatePair_UsesUtf16Units()
+    {
+        var index = new LineIndex("a\U0001F600b");
+
+        Assert.Equal(0, Offset(index, 0, 0));
+        Assert.Equal(1, Offset(index, 0, 1));
+        Assert.Equal(2, Offset(index, 0, 2));
+        Assert.Equal(3, Offset(index, 0, 3));
+        Assert.Equal(4, Offset(index, 0, 4));
+        Assert.False(index.TryGetOffset(new TextPosition(0, 5), out _));
+    }
+
+    [Fact]
+    public void TryGetOffset_RoundTripsWithTryGetPosition()
+    {
+        var index = new LineIndex("one\r\ntwo\nthree\rfour");
+
+        for (var offset = 0; offset <= 20; offset++)
+        {
+            if (!index.TryGetPosition(offset, out TextPosition position))
+            {
+                continue;
+            }
+
+            // A position maps back to an offset that maps to the same position,
+            // except offsets inside a terminator which collapse to visible end.
+            Assert.True(index.TryGetOffset(position, out int roundTrip));
+            Assert.True(index.TryGetPosition(roundTrip, out TextPosition reprojected));
+            Assert.Equal(position, reprojected);
+        }
+    }
+
     private static TextPosition Position(LineIndex index, int offset)
     {
         Assert.True(index.TryGetPosition(offset, out TextPosition position));
         return position;
+    }
+
+    private static int Offset(LineIndex index, int line, int character)
+    {
+        Assert.True(index.TryGetOffset(new TextPosition(line, character), out int offset));
+        return offset;
     }
 }

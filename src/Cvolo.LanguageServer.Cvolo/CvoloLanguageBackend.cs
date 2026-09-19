@@ -1,5 +1,7 @@
 using Cvolo.Compiler.Tooling;
+using Cvolo.Compiler.Tooling.Completion;
 using Cvolo.LanguageServer.Core.Backend;
+using Cvolo.LanguageServer.Core.Completion;
 using Cvolo.LanguageServer.Core.Diagnostics;
 using Cvolo.LanguageServer.Core.Documents;
 using Cvolo.LanguageServer.Core.Logging;
@@ -157,7 +159,7 @@ internal sealed class CvoloLanguageBackend(IReadOnlyList<string> workspaceFolder
         ProjectSnapshot snapshot,
         DiagnosticLocation location,
         Dictionary<DocumentUri, string> texts,
-        out BackendDiagnosticLocation mapped)
+        [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out BackendDiagnosticLocation? mapped)
     {
         if (snapshot.TryGetDocument(location.DocumentId, out DocumentSnapshot? document)
             && DocumentUri.TryCreate(document.FilePath, out DocumentUri uri))
@@ -235,6 +237,88 @@ internal sealed class CvoloLanguageBackend(IReadOnlyList<string> workspaceFolder
         return documentPath.Length > normalizedRoot.Length
             && documentPath.StartsWith(normalizedRoot, comparison)
             && (documentPath[normalizedRoot.Length] == Path.DirectorySeparatorChar || documentPath[normalizedRoot.Length] == Path.AltDirectorySeparatorChar);
+    }
+
+    public BackendCompletionResult GetCompletions(BackendSnapshot snapshot, BackendDocumentHandle document, int position)
+    {
+        var toolingSnapshot = ((ToolingBackendSnapshot)snapshot).Snapshot;
+        var documentId = ((CvoloDocumentHandle)document).DocumentId;
+
+        if (!toolingSnapshot.TryGetDocument(documentId, out DocumentSnapshot? toolingDocument))
+        {
+            // The handle does not belong to the supplied snapshot. Refuse the
+            // operation rather than fabricate a result for a document we cannot
+            // see; the handler degrades the failure to a null response (§20).
+            throw new InvalidOperationException("The completion document is not present in the captured snapshot.");
+        }
+
+        int textLength = toolingDocument.Text.Length;
+        if (position < 0 || position > textLength)
+        {
+            // Never clamp or invent a replacement span for an impossible offset.
+            throw new ArgumentOutOfRangeException(
+                nameof(position),
+                position,
+                "The completion position is outside the captured document text.");
+        }
+
+        CompletionResult result = toolingDocument.GetCompletions(position);
+        var toolingSpan = result.ReplacementRange;
+
+        if (!IsValidReplacementSpan(toolingSpan.Start, toolingSpan.Length, position, textLength))
+        {
+            // Reject malformed Tooling output rather than repairing it: a bad
+            // span must never become an unsafe TextEdit (§14, §17).
+            throw new InvalidOperationException(
+                $"The completion result returned an invalid replacement span " +
+                $"(start={toolingSpan.Start}, length={toolingSpan.Length}) for position {position} over {textLength} code unit(s).");
+        }
+
+        var items = new List<BackendCompletionItem>(result.Candidates.Count);
+        foreach (CompletionCandidate candidate in result.Candidates)
+        {
+            items.Add(new BackendCompletionItem(candidate.Label, candidate.InsertText, MapCompletionKind(candidate.Kind), candidate.IsSnippet));
+        }
+
+        return new BackendCompletionResult(
+            new CoreTextSpan(toolingSpan.Start, toolingSpan.Length),
+            items);
+    }
+
+    /// <summary>
+    /// Validates a Tooling replacement span against the captured text and cursor:
+    /// it must be non-negative, lie within the text, and contain the request
+    /// offset (<c>Start &lt;= position &lt;= End</c>, §17). Exposed internally so
+    /// malformed spans can be covered deterministically without faking Tooling.
+    /// </summary>
+    internal static bool IsValidReplacementSpan(int start, int length, int position, int textLength)
+    {
+        return start >= 0
+            && length >= 0
+            && start + length <= textLength
+            && start <= position
+            && position <= start + length;
+    }
+
+    private static BackendCompletionKind MapCompletionKind(CompletionKind kind)
+    {
+        return kind switch
+        {
+            CompletionKind.Local => BackendCompletionKind.Local,
+            CompletionKind.Parameter => BackendCompletionKind.Parameter,
+            CompletionKind.Global => BackendCompletionKind.Global,
+            CompletionKind.Function => BackendCompletionKind.Function,
+            CompletionKind.Method => BackendCompletionKind.Method,
+            CompletionKind.Type => BackendCompletionKind.Type,
+            CompletionKind.Namespace => BackendCompletionKind.Namespace,
+            CompletionKind.StructField => BackendCompletionKind.StructField,
+            CompletionKind.UnionVariant => BackendCompletionKind.UnionVariant,
+            CompletionKind.EnumVariant => BackendCompletionKind.EnumMember,
+            CompletionKind.EnumMetadata => BackendCompletionKind.EnumMetadata,
+            CompletionKind.ArrayLength => BackendCompletionKind.ArrayLength,
+            CompletionKind.Keyword => BackendCompletionKind.Keyword,
+            _ => BackendCompletionKind.OtherType,
+        };
     }
 }
 
