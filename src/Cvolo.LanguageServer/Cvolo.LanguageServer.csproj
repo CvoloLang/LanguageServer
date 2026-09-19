@@ -60,13 +60,15 @@
       <_ToolingRuntime Include="$(CvoloToolingDir)\**\*"
                        Condition="Exists('$(CvoloToolingDir)')" />
     </ItemGroup>
+    <!-- The runtime loads Cvolo.Compiler.Tooling.dll (and the standard library it needs)
+         from the application base directory, so the tooling bundle is copied beside the
+         executable as well as into the publish output. -->
+    <Copy SourceFiles="@(_ToolingRuntime)"
+          DestinationFolder="$(OutputPath)%(RecursiveDir)"
+          SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(_ToolingRuntime)"
           DestinationFolder="$(PublishDir)%(RecursiveDir)"
           Condition="'$(PublishDir)' != ''"
-          SkipUnchangedFiles="true" />
-    <Copy SourceFiles="@(_ToolingRuntime)"
-          DestinationFolder="$(OutputPath)%(RecursiveDir)"
-          Condition="'$(PublishDir)' == ''"
           SkipUnchangedFiles="true" />
   </Target>
 
