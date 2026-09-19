@@ -10,6 +10,7 @@ namespace Cvolo.LanguageServer.Tests.Protocol;
 /// End-to-end semantic-token coverage against the real Cvolo-backed store: capability gating,
 /// relative encoding, kind/modifier mapping and empty results.
 /// </summary>
+[Collection(ProtocolConcurrencyCollection.Name)]
 public class SemanticTokensHandlerTests : IDisposable
 {
     private static readonly string[] CanonicalTypes =
