@@ -114,6 +114,20 @@ public class CvoloLanguageBackendTests : IDisposable
     }
 
     [Fact]
+    public void SourceOutsideProjectDirectory_IsHostedByOwningProject()
+    {
+        var project = _backend.OpenProject(MainUri)!;
+        var stdPath = Path.Combine(AppContext.BaseDirectory, "libraries", "System", "Attributes", "ErrorAttribute.cvl");
+        Assert.True(File.Exists(stdPath), "the test host must ship the standard library");
+        var stdUri = DocumentUri.Create(stdPath);
+
+        var owner = _backend.OpenProject(stdUri);
+
+        Assert.Same(project, owner);
+        Assert.True(_backend.TryResolveDocument(owner!, stdUri, out _));
+    }
+
+    [Fact]
     public void AmbiguousProject_ReturnsNull_AndWarns()
     {
         using var workspace = TestWorkspace.CreateDirectory(["main.cvl"]);

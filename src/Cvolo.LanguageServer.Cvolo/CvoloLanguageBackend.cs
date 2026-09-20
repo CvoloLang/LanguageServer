@@ -28,6 +28,12 @@ internal sealed class CvoloLanguageBackend(IReadOnlyList<string> workspaceFolder
         ProjectDiscoveryResult discovery = ProjectDiscovery.FindProject(document.LocalPath, boundary);
         if (discovery.Status == ProjectDiscoveryStatus.NoProject)
         {
+            // A source outside any project directory (for example a standard-library file
+            // reached by go-to-definition) may still be part of an already-open project's
+            // document set; host it under that project so hover/definition work inside it.
+            if (TryFindOwningSession(document.LocalPath, out var owner))
+                return owner;
+
             _logger.Write(CoreLogLevel.Warning, $"No .cvlproj found for '{document}'.");
             return null;
         }
@@ -47,6 +53,21 @@ internal sealed class CvoloLanguageBackend(IReadOnlyList<string> workspaceFolder
             _logger.Write(CoreLogLevel.Error, $"Opening Cvolo project '{discovery.ProjectDirectory}' failed: {ex.Message}");
             return null;
         }
+    }
+
+    private bool TryFindOwningSession(string path, out CvoloProjectSession session)
+    {
+        foreach (var candidate in _sessions.Values)
+        {
+            if (candidate.Project.TryGetDocumentId(path, out _))
+            {
+                session = candidate;
+                return true;
+            }
+        }
+
+        session = null!;
+        return false;
     }
 
     public bool TryResolveDocument(BackendProject project, DocumentUri document, out BackendDocumentHandle handle)
