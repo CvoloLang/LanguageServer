@@ -1,5 +1,6 @@
 using Cvolo.Compiler.Tooling;
 using Cvolo.Compiler.Tooling.Completion;
+using Cvolo.Compiler.Tooling.SignatureHelp;
 using Cvolo.LanguageServer.Core.Backend;
 using Cvolo.LanguageServer.Core.Completion;
 using Cvolo.LanguageServer.Core.Diagnostics;
@@ -308,6 +309,31 @@ internal sealed class CvoloLanguageBackend(IReadOnlyList<string> workspaceFolder
             items);
     }
 
+    public BackendSignatureHelpResult? GetSignatureHelp(BackendSnapshot snapshot, BackendDocumentHandle document, int position)
+    {
+        var toolingSnapshot = ((ToolingBackendSnapshot)snapshot).Snapshot;
+        var documentId = ((CvoloDocumentHandle)document).DocumentId;
+
+        if (!toolingSnapshot.TryGetDocument(documentId, out DocumentSnapshot? toolingDocument))
+            throw new InvalidOperationException("The signature-help document is not present in the captured snapshot.");
+
+        if (position < 0 || position > toolingDocument.Text.Length)
+            throw new ArgumentOutOfRangeException(nameof(position), position, "The signature-help position is outside the captured document text.");
+
+        SignatureHelpResult? result = toolingDocument.GetSignatureHelp(position);
+        if (result is null)
+            return null;
+
+        var signatures = result.Signatures
+            .Select(signature => new BackendSignatureHelpItem(
+                signature.Label,
+                signature.Parameters.Select(parameter => new BackendSignatureHelpParameter(parameter.Label)).ToArray(),
+                signature.Documentation))
+            .ToArray();
+
+        return new BackendSignatureHelpResult(signatures, result.ActiveSignature, result.ActiveParameter);
+    }
+
     public BackendSymbolInfo? GetSymbolAtPosition(BackendSnapshot snapshot, BackendDocumentHandle document, int position)
     {
         var toolingSnapshot = ((ToolingBackendSnapshot)snapshot).Snapshot;
@@ -341,7 +367,8 @@ internal sealed class CvoloLanguageBackend(IReadOnlyList<string> workspaceFolder
             result.Name,
             MapSymbolKind(result.Kind),
             result.DisplayText,
-            result.Documentation);
+            result.Documentation,
+            MapNativeInterop(result.NativeInterop));
     }
 
     public BackendDefinitionResult GetDefinitions(BackendSnapshot snapshot, BackendSymbolHandle symbol)
@@ -454,6 +481,29 @@ internal sealed class CvoloLanguageBackend(IReadOnlyList<string> workspaceFolder
 
     private static readonly BackendDefinitionResult EmptyDefinitions =
         new(new Dictionary<DocumentUri, string>(), []);
+
+    private static BackendNativeInteropMetadata? MapNativeInterop(NativeInteropMetadata? metadata)
+    {
+        if (metadata is null || metadata.Kind == NativeInteropKind.None)
+            return null;
+
+        var kind = metadata.Kind switch
+        {
+            NativeInteropKind.NativeDelegate => BackendNativeInteropKind.NativeDelegate,
+            NativeInteropKind.RawUnion => BackendNativeInteropKind.RawUnion,
+            NativeInteropKind.ForeignGlobal => BackendNativeInteropKind.ForeignGlobal,
+            _ => throw new ArgumentOutOfRangeException(nameof(metadata), metadata.Kind, "Unknown native interop kind."),
+        };
+
+        return new BackendNativeInteropMetadata(
+            kind,
+            metadata.CallingConvention,
+            metadata.ImportName,
+            metadata.LibraryName,
+            metadata.WinPath,
+            metadata.LinuxPath,
+            metadata.MacPath);
+    }
 
     private static BackendSymbolKind MapSymbolKind(ToolingSymbolKind kind)
     {

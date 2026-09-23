@@ -326,6 +326,12 @@ internal sealed class DocumentStore(ILanguageBackend backend, ICoreLogger? logge
         return backend.GetCompletions(context.Document.BackendSnapshot, context.Document.BackendDocument, position);
     }
 
+    /// <summary>Returns signature help from the coherent project snapshot captured for the request.</summary>
+    public BackendSignatureHelpResult? GetSignatureHelp(SemanticRequestContext context, int position)
+    {
+        return backend.GetSignatureHelp(context.CurrentProjectSnapshot, context.Document.BackendDocument, position);
+    }
+
     /// <summary>
     /// Resolves the symbol at <paramref name="position"/> from the document's own
     /// coherent snapshot captured in <paramref name="context"/>. Callers must

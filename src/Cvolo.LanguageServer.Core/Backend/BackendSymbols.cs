@@ -49,13 +49,31 @@ internal enum BackendSymbolKind
 /// The symbol resolved at a source position: its opaque handle, the occurrence
 /// span, its name and classification, and a backend-owned display string.
 /// </summary>
+internal enum BackendNativeInteropKind
+{
+    NativeDelegate,
+    RawUnion,
+    ForeignGlobal,
+}
+
+/// <summary>Structured native interop details transported without reparsing Cvolo attributes.</summary>
+internal sealed record BackendNativeInteropMetadata(
+    BackendNativeInteropKind Kind,
+    string? CallingConvention = null,
+    string? ImportName = null,
+    string? LibraryName = null,
+    string? WinPath = null,
+    string? LinuxPath = null,
+    string? MacPath = null);
+
 internal sealed record BackendSymbolInfo(
     BackendSymbolHandle Symbol,
     TextSpan SubjectSpan,
     string Name,
     BackendSymbolKind Kind,
     string DisplayText,
-    string? Documentation = null);
+    string? Documentation = null,
+    BackendNativeInteropMetadata? NativeInterop = null);
 
 /// <summary>
 /// One source declaration of a symbol, expressed in the backend's own spans.

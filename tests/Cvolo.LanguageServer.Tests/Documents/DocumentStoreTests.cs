@@ -403,6 +403,11 @@ public class DocumentStoreTests
             return new BackendCompletionResult(new TextSpan(position, 0), []);
         }
 
+        public BackendSignatureHelpResult? GetSignatureHelp(BackendSnapshot snapshot, BackendDocumentHandle document, int position)
+        {
+            return null;
+        }
+
         public BackendSymbolInfo? GetSymbolAtPosition(BackendSnapshot snapshot, BackendDocumentHandle document, int position)
         {
             return null;

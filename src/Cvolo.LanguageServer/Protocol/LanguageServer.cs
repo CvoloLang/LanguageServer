@@ -25,6 +25,7 @@ internal sealed class LanguageServer(
     private DocumentStore? _store;
     private TextDocumentSyncHandler? _sync;
     private CompletionHandler? _completion;
+    private SignatureHelpHandler? _signatureHelp;
     private HoverHandler? _hover;
     private DefinitionHandler? _definition;
     private DocumentSymbolHandler? _documentSymbols;
@@ -54,6 +55,9 @@ internal sealed class LanguageServer(
     /// textDocument/completion handler.
     /// </summary>
     internal CompletionHandler Completion => _completion ??= new CompletionHandler(logger, () => Store);
+
+    /// <summary>textDocument/signatureHelp handler.</summary>
+    internal SignatureHelpHandler SignatureHelp => _signatureHelp ??= new SignatureHelpHandler(logger, () => Store);
 
     /// <summary>
     /// textDocument/hover handler.
@@ -159,6 +163,11 @@ internal sealed class LanguageServer(
                 {
                     ResolveProvider = false,
                     TriggerCharacters = [".", "~"],
+                },
+                SignatureHelpProvider = new SignatureHelpOptions
+                {
+                    TriggerCharacters = ["(", ","],
+                    RetriggerCharacters = [","],
                 },
                 HoverProvider = true,
                 DefinitionProvider = true,

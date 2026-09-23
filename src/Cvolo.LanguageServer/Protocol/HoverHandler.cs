@@ -101,7 +101,7 @@ internal sealed class HoverHandler(ILspLogger logger, Func<DocumentStore> storeA
 
         return new Hover
         {
-            Contents = FormatContents(symbol.DisplayText, symbol.Documentation),
+            Contents = FormatContents(symbol.DisplayText, symbol.Documentation, symbol.NativeInterop),
             Range = new LspRange
             {
                 Start = new Position(range.Start.Line, range.Start.Character),
@@ -110,14 +110,17 @@ internal sealed class HoverHandler(ILspLogger logger, Func<DocumentStore> storeA
         };
     }
 
-    private MarkupContent FormatContents(string displayText, string? documentation)
+    private MarkupContent FormatContents(string displayText, string? documentation, BackendNativeInteropMetadata? nativeInterop)
     {
+        string? nativeDetails = FormatNativeInterop(nativeInterop);
         if (!markdownAccessor())
         {
+            var sections = new[] { displayText, nativeDetails, documentation }
+                .Where(section => !string.IsNullOrEmpty(section));
             return new MarkupContent
             {
                 Kind = MarkupKind.PlainText,
-                Value = string.IsNullOrEmpty(documentation) ? displayText : $"{displayText}\n\n{documentation}",
+                Value = string.Join("\n\n", sections),
             };
         }
 
@@ -130,10 +133,11 @@ internal sealed class HoverHandler(ILspLogger logger, Func<DocumentStore> storeA
         }
 
         var markdown = $"{fence}cvolo\n{displayText}\n{fence}";
+        if (!string.IsNullOrEmpty(nativeDetails))
+            markdown += $"\n\n**Native interop**\n\n{nativeDetails.Replace("\n", "  \n", StringComparison.Ordinal)}";
+
         if (!string.IsNullOrEmpty(documentation))
-        {
             markdown += $"\n\n{documentation}";
-        }
 
         return new MarkupContent
         {
@@ -141,4 +145,30 @@ internal sealed class HoverHandler(ILspLogger logger, Func<DocumentStore> storeA
             Value = markdown,
         };
     }
+
+    private static string? FormatNativeInterop(BackendNativeInteropMetadata? metadata)
+    {
+        if (metadata is null)
+            return null;
+
+        var lines = new List<string>
+        {
+            $"kind: {metadata.Kind switch { BackendNativeInteropKind.NativeDelegate => "native delegate", BackendNativeInteropKind.RawUnion => "raw union", BackendNativeInteropKind.ForeignGlobal => "foreign global", _ => "native interop" }}",
+        };
+
+        Add("calling convention", metadata.CallingConvention);
+        Add("import name", metadata.ImportName);
+        Add("library", metadata.LibraryName);
+        Add("windows path", metadata.WinPath);
+        Add("linux path", metadata.LinuxPath);
+        Add("macOS path", metadata.MacPath);
+        return string.Join("\n", lines);
+
+        void Add(string label, string? value)
+        {
+            if (!string.IsNullOrEmpty(value))
+                lines.Add($"{label}: {value}");
+        }
+    }
+
 }

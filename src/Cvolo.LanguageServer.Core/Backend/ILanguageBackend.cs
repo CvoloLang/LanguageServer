@@ -91,6 +91,12 @@ internal interface ILanguageBackend
     BackendCompletionResult GetCompletions(BackendSnapshot snapshot, BackendDocumentHandle document, int position);
 
     /// <summary>
+    /// Computes signature help for the call containing <paramref name="position"/> from the same
+    /// coherent snapshot used by the editor request. Returns null when no callable is bound.
+    /// </summary>
+    BackendSignatureHelpResult? GetSignatureHelp(BackendSnapshot snapshot, BackendDocumentHandle document, int position);
+
+    /// <summary>
     /// Resolves the backend-neutral symbol at <paramref name="position"/> (an
     /// absolute UTF-16 code-unit offset over the captured snapshot text) from the
     /// one coherent <paramref name="snapshot"/>. Returns null when no trustworthy

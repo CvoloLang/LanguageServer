@@ -122,6 +122,11 @@ internal sealed class BlockingBackend : ILanguageBackend
             : new BackendCompletionResult(new TextSpan(position, 0), CannedItems);
     }
 
+    public BackendSignatureHelpResult? GetSignatureHelp(BackendSnapshot snapshot, BackendDocumentHandle document, int position)
+    {
+        return null;
+    }
+
     private readonly ManualResetEventSlim _navigationBlock = new(initialState: true);
     private readonly ManualResetEventSlim _navigationEntered = new(initialState: false);
 

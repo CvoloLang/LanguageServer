@@ -22,6 +22,8 @@ internal sealed record ServerCapabilities
 
     public CompletionOptions? CompletionProvider { get; init; }
 
+    public SignatureHelpOptions? SignatureHelpProvider { get; init; }
+
     public bool? HoverProvider { get; init; }
 
     public bool? DefinitionProvider { get; init; }
@@ -61,6 +63,34 @@ internal sealed record CompletionOptions
 
     public string[]? TriggerCharacters { get; init; }
 }
+
+/// <summary>LSP 3.17 <c>signatureHelpProvider</c> options.</summary>
+internal sealed record SignatureHelpOptions
+{
+    public string[]? TriggerCharacters { get; init; }
+
+    public string[]? RetriggerCharacters { get; init; }
+}
+
+/// <summary>Params for <c>textDocument/signatureHelp</c>.</summary>
+internal sealed class SignatureHelpParams
+{
+    public TextDocumentIdentifier? TextDocument { get; init; }
+
+    public Position? Position { get; init; }
+}
+
+internal sealed record SignatureHelpResponse(
+    SignatureInformationPayload[] Signatures,
+    int ActiveSignature,
+    int ActiveParameter);
+
+internal sealed record SignatureInformationPayload(
+    string Label,
+    ParameterInformationPayload[] Parameters,
+    string? Documentation = null);
+
+internal sealed record ParameterInformationPayload(string Label);
 
 /// <summary>
 /// LSP 3.17 <c>ServerInfo</c>.

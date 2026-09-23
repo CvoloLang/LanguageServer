@@ -47,7 +47,7 @@ internal sealed class CvoloLanguageServerRootCommand : RootCommand
     {
         try
         {
-            if (parseResult.GetValue(_versionOption))
+            if (parseResult.Tokens.Any(token => token.Value == _versionOption.Name))
             {
                 ServerPipeline.PrintVersion();
                 return 0;

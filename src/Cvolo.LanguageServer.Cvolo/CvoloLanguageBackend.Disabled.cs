@@ -56,6 +56,11 @@ internal sealed class CvoloLanguageBackend(IReadOnlyList<string> workspaceFolder
         throw new InvalidOperationException("Cvolo compiler tooling is unavailable.");
     }
 
+    public BackendSignatureHelpResult? GetSignatureHelp(BackendSnapshot snapshot, BackendDocumentHandle document, int position)
+    {
+        throw new InvalidOperationException("Cvolo compiler tooling is unavailable.");
+    }
+
     public BackendSymbolInfo? GetSymbolAtPosition(BackendSnapshot snapshot, BackendDocumentHandle document, int position)
     {
         throw new InvalidOperationException("Cvolo compiler tooling is unavailable.");
