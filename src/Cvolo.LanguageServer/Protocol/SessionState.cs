@@ -72,8 +72,17 @@ internal sealed class SessionState
         HierarchicalDocumentSymbols =
             initializeParams?.Capabilities?.TextDocument?.DocumentSymbol?.HierarchicalDocumentSymbolSupport == true;
         ComputeSemanticTokens(initializeParams);
+        PrepareRenameSupported = initializeParams?.Capabilities?.TextDocument?.Rename?.PrepareSupport == true;
+        DocumentChangesSupported = initializeParams?.Capabilities?.Workspace?.WorkspaceEdit?.DocumentChanges == true;
         _initializeReceived = true;
     }
+
+
+    /// <summary>Whether the client supports textDocument/prepareRename.</summary>
+    public bool PrepareRenameSupported { get; private set; }
+
+    /// <summary>Whether WorkspaceEdit.documentChanges is supported.</summary>
+    public bool DocumentChangesSupported { get; private set; }
 
     private static readonly string[] CanonicalTokenTypes =
     [

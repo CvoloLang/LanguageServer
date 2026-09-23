@@ -105,8 +105,11 @@ internal sealed class CvoloLanguageBackend(IReadOnlyList<string> workspaceFolder
 
         lock (session.Gate)
         {
-            DocumentSnapshot baseline = session.Baseline.GetDocument(document.DocumentId);
-            ProjectSnapshot next = session.Current.WithDocument(document.DocumentId, baseline.Text);
+            // The disk baseline can change while a document is open (save, rename edits applied by
+            // the client, external tools). Read it at close so removing the editor overlay never
+            // resurrects the project text captured when the language server first opened it.
+            SourceText baseline = session.ReadDiskBaseline(document.DocumentId);
+            ProjectSnapshot next = session.Current.WithDocument(document.DocumentId, baseline);
             session.Advance(next);
             return new ToolingBackendSnapshot(next, session.Generation);
         }
@@ -117,6 +120,59 @@ internal sealed class CvoloLanguageBackend(IReadOnlyList<string> workspaceFolder
         var session = (CvoloProjectSession)project;
         lock (session.Gate)
         {
+            return new ToolingBackendSnapshot(session.Current, session.Generation);
+        }
+    }
+
+    public BackendSnapshot SynchronizeClosedDocuments(BackendProject project, IReadOnlyList<BackendDocumentHandle> openDocuments)
+    {
+        var session = (CvoloProjectSession)project;
+        var openIds = openDocuments
+            .OfType<CvoloDocumentHandle>()
+            .Select(handle => handle.DocumentId)
+            .ToHashSet();
+
+        lock (session.Gate)
+        {
+            ProjectSnapshot next = session.Current;
+            var changed = false;
+
+            foreach (DocumentId documentId in next.DocumentIds)
+            {
+                if (openIds.Contains(documentId))
+                    continue;
+
+                DocumentSnapshot document = next.GetDocument(documentId);
+                if (!File.Exists(document.FilePath))
+                    continue;
+
+                string diskText;
+                try
+                {
+                    diskText = File.ReadAllText(document.FilePath);
+                }
+                catch (IOException ex)
+                {
+                    _logger.Write(CoreLogLevel.Debug, $"Closed-document refresh skipped for '{document.FilePath}': {ex.Message}");
+                    continue;
+                }
+                catch (UnauthorizedAccessException ex)
+                {
+                    _logger.Write(CoreLogLevel.Debug, $"Closed-document refresh skipped for '{document.FilePath}': {ex.Message}");
+                    continue;
+                }
+
+                session.SetDiskBaseline(documentId, SourceText.From(diskText));
+                if (string.Equals(document.Text.ToString(), diskText, StringComparison.Ordinal))
+                    continue;
+
+                next = next.WithDocument(documentId, SourceText.From(diskText));
+                changed = true;
+            }
+
+            if (changed)
+                session.Advance(next);
+
             return new ToolingBackendSnapshot(session.Current, session.Generation);
         }
     }
@@ -407,6 +463,74 @@ internal sealed class CvoloLanguageBackend(IReadOnlyList<string> workspaceFolder
         return new BackendDefinitionResult(texts, targets);
     }
 
+    public BackendReferenceResult GetReferences(BackendSnapshot snapshot, BackendSymbolHandle symbol, bool includeDeclaration)
+    {
+        var toolingSnapshot = ((ToolingBackendSnapshot)snapshot).Snapshot;
+        if (symbol is not CvoloSymbolHandle handle || !ReferenceEquals(handle.Snapshot, toolingSnapshot))
+            return new BackendReferenceResult(new Dictionary<DocumentUri, string>(), []);
+
+        IReadOnlyList<SymbolReference> references = toolingSnapshot.GetReferences(handle.SymbolId, includeDeclaration);
+        var texts = new Dictionary<DocumentUri, string>();
+        var locations = new List<BackendReferenceLocation>(references.Count);
+        foreach (SymbolReference reference in references)
+        {
+            if (!toolingSnapshot.TryGetDocument(reference.DocumentId, out DocumentSnapshot? targetDocument))
+                continue;
+
+            DocumentUri uri = ToDocumentUri(targetDocument.FilePath);
+            texts.TryAdd(uri, targetDocument.Text.ToString());
+            locations.Add(new BackendReferenceLocation(
+                uri,
+                new CoreTextSpan(reference.Span.Start, reference.Span.Length),
+                reference.IsDeclaration));
+        }
+
+        return new BackendReferenceResult(texts, locations);
+    }
+
+    public BackendRenamePreparation? PrepareRename(BackendSnapshot snapshot, BackendDocumentHandle document, int position)
+    {
+        var toolingSnapshot = ((ToolingBackendSnapshot)snapshot).Snapshot;
+        var documentId = ((CvoloDocumentHandle)document).DocumentId;
+        if (!toolingSnapshot.TryGetDocument(documentId, out DocumentSnapshot? toolingDocument))
+            throw new InvalidOperationException("The rename document is not present in the captured snapshot.");
+
+        RenamePreparation? preparation = toolingDocument.PrepareRename(position);
+        if (preparation is null)
+            return null;
+
+        return new BackendRenamePreparation(
+            new CvoloSymbolHandle(toolingSnapshot, preparation.SymbolId),
+            new CoreTextSpan(preparation.SubjectSpan.Start, preparation.SubjectSpan.Length),
+            preparation.Placeholder);
+    }
+
+    public BackendRenameResult RenameSymbol(BackendSnapshot snapshot, BackendSymbolHandle symbol, string newName)
+    {
+        var toolingSnapshot = ((ToolingBackendSnapshot)snapshot).Snapshot;
+        if (symbol is not CvoloSymbolHandle handle || !ReferenceEquals(handle.Snapshot, toolingSnapshot))
+            return new BackendRenameFailure("The selected symbol does not belong to the captured project snapshot.");
+
+        RenameResult result = toolingSnapshot.RenameSymbol(handle.SymbolId, newName);
+        if (result is RenameFailure failure)
+            return new BackendRenameFailure(failure.Message);
+
+        var success = (RenameSuccess)result;
+        var texts = new Dictionary<DocumentUri, string>();
+        var edits = new List<BackendRenameEdit>(success.Edits.Count);
+        foreach (RenameEdit edit in success.Edits)
+        {
+            if (!toolingSnapshot.TryGetDocument(edit.DocumentId, out DocumentSnapshot? targetDocument))
+                return new BackendRenameFailure("Rename produced an edit outside the captured project snapshot.");
+
+            DocumentUri uri = ToDocumentUri(targetDocument.FilePath);
+            texts.TryAdd(uri, targetDocument.Text.ToString());
+            edits.Add(new BackendRenameEdit(uri, new CoreTextSpan(edit.Span.Start, edit.Span.Length), edit.NewText));
+        }
+
+        return new BackendRenameSuccess(texts, edits);
+    }
+
     public IReadOnlyList<BackendDocumentSymbol> GetDocumentSymbols(BackendSnapshot snapshot, BackendDocumentHandle document)
     {
         var toolingSnapshot = ((ToolingBackendSnapshot)snapshot).Snapshot;
@@ -589,6 +713,38 @@ internal sealed class CvoloProjectSession(CvoloWorkspace workspace, CvoloProject
     public ProjectSnapshot Current { get; private set; } = project.InitialSnapshot;
 
     public long Generation { get; private set; }
+
+    private readonly Dictionary<DocumentId, SourceText> _diskBaselines = project.InitialSnapshot.Documents
+        .ToDictionary(pair => pair.Key, pair => pair.Value.Text);
+
+    public SourceText ReadDiskBaseline(DocumentId documentId)
+    {
+        DocumentSnapshot document = Current.GetDocument(documentId);
+        if (File.Exists(document.FilePath))
+        {
+            try
+            {
+                var source = SourceText.From(File.ReadAllText(document.FilePath));
+                _diskBaselines[documentId] = source;
+                return source;
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
+        }
+
+        return _diskBaselines.TryGetValue(documentId, out SourceText? baseline)
+            ? baseline
+            : Project.InitialSnapshot.GetDocument(documentId).Text;
+    }
+
+    public void SetDiskBaseline(DocumentId documentId, SourceText source)
+    {
+        _diskBaselines[documentId] = source;
+    }
 
     /// <summary>
     /// Serializes advancement of <see cref="Current"/> for this project.

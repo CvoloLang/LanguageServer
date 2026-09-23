@@ -175,7 +175,7 @@ internal sealed class DocumentStore(ILanguageBackend backend, ICoreLogger? logge
             if (_documents.TryGetValue(uri, out DocumentEntry? current))
             {
                 DocumentState state = current.State;
-                BackendSnapshot currentProjectSnapshot = backend.CaptureCurrentSnapshot(current.Project);
+                BackendSnapshot currentProjectSnapshot = CaptureSynchronizedSnapshot(current.Project);
                 context = new SemanticRequestContext(
                     state.Uri,
                     state.SessionId,
@@ -189,6 +189,58 @@ internal sealed class DocumentStore(ILanguageBackend backend, ICoreLogger? logge
             context = default;
             return false;
         }
+    }
+
+    /// <summary>
+    /// Atomically captures a semantic request and every currently open document in the same backend
+    /// project. Rename uses this to guarantee that all affected documents are open and versioned.
+    /// </summary>
+    public bool TryCaptureSemanticEdit(DocumentUri uri, out SemanticEditRequestContext context)
+    {
+        lock (_publicationGate)
+        {
+            if (!_documents.TryGetValue(uri, out DocumentEntry? current))
+            {
+                context = null!;
+                return false;
+            }
+
+            DocumentState state = current.State;
+            BackendSnapshot currentProjectSnapshot = CaptureSynchronizedSnapshot(current.Project);
+            var semantic = new SemanticRequestContext(
+                state.Uri,
+                state.SessionId,
+                state.Version,
+                state,
+                current.Project,
+                currentProjectSnapshot);
+
+            var open = new Dictionary<DocumentUri, OpenDocumentEditState>(DocumentUriPathComparer.Instance);
+            foreach (var pair in _documents)
+            {
+                if (!ReferenceEquals(pair.Value.Project, current.Project))
+                    continue;
+
+                var openState = pair.Value.State;
+                open[openState.Uri] = new OpenDocumentEditState(
+                    openState.Uri,
+                    openState.SessionId,
+                    openState.Version,
+                    pair.Value.Handle);
+            }
+
+            context = new SemanticEditRequestContext(semantic, open);
+            return true;
+        }
+    }
+
+    private BackendSnapshot CaptureSynchronizedSnapshot(BackendProject project)
+    {
+        var openHandles = _documents.Values
+            .Where(entry => ReferenceEquals(entry.Project, project))
+            .Select(entry => entry.Handle)
+            .ToArray();
+        return backend.SynchronizeClosedDocuments(project, openHandles);
     }
 
     /// <summary>Returns the backend project hosting an open document.</summary>
@@ -211,21 +263,24 @@ internal sealed class DocumentStore(ILanguageBackend backend, ICoreLogger? logge
     /// </summary>
     public bool TryCaptureDiagnosticRun(BackendProject project, out DiagnosticRunContext context)
     {
-        BackendSnapshot snapshot = backend.CaptureCurrentSnapshot(project);
-        var targets = new List<DiagnosticPublishTarget>();
-        foreach (var pair in _documents)
+        lock (_publicationGate)
         {
-            if (!ReferenceEquals(pair.Value.Project, project))
+            BackendSnapshot snapshot = CaptureSynchronizedSnapshot(project);
+            var targets = new List<DiagnosticPublishTarget>();
+            foreach (var pair in _documents)
             {
-                continue;
+                if (!ReferenceEquals(pair.Value.Project, project))
+                {
+                    continue;
+                }
+
+                DocumentState state = pair.Value.State;
+                targets.Add(new DiagnosticPublishTarget(state.Uri, state.SessionId, state.Version, pair.Value.Handle));
             }
 
-            DocumentState state = pair.Value.State;
-            targets.Add(new DiagnosticPublishTarget(state.Uri, state.SessionId, state.Version, pair.Value.Handle));
+            context = new DiagnosticRunContext(project, snapshot, targets);
+            return targets.Count > 0;
         }
-
-        context = new DiagnosticRunContext(project, snapshot, targets);
-        return targets.Count > 0;
     }
 
     /// <summary>Whether <paramref name="project"/> still has any open document.</summary>
@@ -350,6 +405,21 @@ internal sealed class DocumentStore(ILanguageBackend backend, ICoreLogger? logge
     public BackendDefinitionResult GetDefinitions(BackendSnapshot snapshot, BackendSymbolHandle symbol)
     {
         return backend.GetDefinitions(snapshot, symbol);
+    }
+
+    public BackendReferenceResult GetReferences(BackendSnapshot snapshot, BackendSymbolHandle symbol, bool includeDeclaration)
+    {
+        return backend.GetReferences(snapshot, symbol, includeDeclaration);
+    }
+
+    public BackendRenamePreparation? PrepareRename(SemanticRequestContext context, int position)
+    {
+        return backend.PrepareRename(context.CurrentProjectSnapshot, context.Document.BackendDocument, position);
+    }
+
+    public BackendRenameResult RenameSymbol(BackendSnapshot snapshot, BackendSymbolHandle symbol, string newName)
+    {
+        return backend.RenameSymbol(snapshot, symbol, newName);
     }
 
     /// <summary>

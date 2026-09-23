@@ -28,6 +28,10 @@ internal sealed record ServerCapabilities
 
     public bool? DefinitionProvider { get; init; }
 
+    public bool? ReferencesProvider { get; init; }
+
+    public object? RenameProvider { get; init; }
+
     public bool? DocumentSymbolProvider { get; init; }
 
     public SemanticTokensOptions? SemanticTokensProvider { get; init; }
@@ -145,6 +149,13 @@ internal sealed class ClientCapabilitiesPayload
 internal sealed class WorkspaceClientCapabilitiesPayload
 {
     public SemanticTokensWorkspaceClientCapabilitiesPayload? SemanticTokens { get; init; }
+
+    public WorkspaceEditClientCapabilitiesPayload? WorkspaceEdit { get; init; }
+}
+
+internal sealed class WorkspaceEditClientCapabilitiesPayload
+{
+    public bool? DocumentChanges { get; init; }
 }
 
 internal sealed class SemanticTokensWorkspaceClientCapabilitiesPayload
@@ -161,6 +172,13 @@ internal sealed class TextDocumentClientCapabilitiesPayload
     public DocumentSymbolClientCapabilitiesPayload? DocumentSymbol { get; init; }
 
     public SemanticTokensClientCapabilitiesPayload? SemanticTokens { get; init; }
+
+    public RenameClientCapabilitiesPayload? Rename { get; init; }
+}
+
+internal sealed class RenameClientCapabilitiesPayload
+{
+    public bool? PrepareSupport { get; init; }
 }
 
 /// <summary>
@@ -215,3 +233,45 @@ internal sealed class DocumentSymbolClientCapabilitiesPayload
 /// LSP 3.17 <c>WorkspaceFolder</c> wire shape (uri carried as a string).
 /// </summary>
 internal sealed record WorkspaceFolderItem(string? Uri, string? Name);
+
+/// <summary>LSP rename provider options used when prepare-rename is supported.</summary>
+internal sealed record RenameOptionsPayload(bool PrepareProvider);
+
+internal sealed class ReferenceParamsPayload
+{
+    public TextDocumentIdentifier? TextDocument { get; init; }
+    public Position? Position { get; init; }
+    public ReferenceContextPayload? Context { get; init; }
+}
+
+internal sealed class ReferenceContextPayload
+{
+    public bool IncludeDeclaration { get; init; }
+}
+
+internal sealed class PrepareRenameParamsPayload
+{
+    public TextDocumentIdentifier? TextDocument { get; init; }
+    public Position? Position { get; init; }
+}
+
+internal sealed class RenameParamsPayload
+{
+    public TextDocumentIdentifier? TextDocument { get; init; }
+    public Position? Position { get; init; }
+    public string? NewName { get; init; }
+}
+
+internal sealed record PrepareRenameResultPayload(Microsoft.VisualStudio.LanguageServer.Protocol.Range Range, string Placeholder);
+
+internal sealed record TextEditPayload(Microsoft.VisualStudio.LanguageServer.Protocol.Range Range, string NewText);
+
+internal sealed record OptionalVersionedTextDocumentIdentifierPayload(Uri Uri, int? Version);
+
+internal sealed record TextDocumentEditPayload(OptionalVersionedTextDocumentIdentifierPayload TextDocument, TextEditPayload[] Edits);
+
+internal sealed record WorkspaceEditPayload
+{
+    public IReadOnlyDictionary<string, TextEditPayload[]>? Changes { get; init; }
+    public TextDocumentEditPayload[]? DocumentChanges { get; init; }
+}

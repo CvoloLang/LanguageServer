@@ -56,6 +56,19 @@ internal sealed class CvoloLanguageBackend(IReadOnlyList<string> workspaceFolder
         throw new InvalidOperationException("Cvolo compiler tooling is unavailable.");
     }
 
+    /// <summary>
+    /// Validates a completion replacement span independently of compiler tooling so
+    /// adapter boundary tests remain available when the disabled backend is compiled.
+    /// </summary>
+    internal static bool IsValidReplacementSpan(int start, int length, int position, int textLength)
+    {
+        return start >= 0
+            && length >= 0
+            && start + length <= textLength
+            && start <= position
+            && position <= start + length;
+    }
+
     public BackendSignatureHelpResult? GetSignatureHelp(BackendSnapshot snapshot, BackendDocumentHandle document, int position)
     {
         throw new InvalidOperationException("Cvolo compiler tooling is unavailable.");
@@ -67,6 +80,21 @@ internal sealed class CvoloLanguageBackend(IReadOnlyList<string> workspaceFolder
     }
 
     public BackendDefinitionResult GetDefinitions(BackendSnapshot snapshot, BackendSymbolHandle symbol)
+    {
+        throw new InvalidOperationException("Cvolo compiler tooling is unavailable.");
+    }
+
+    public BackendReferenceResult GetReferences(BackendSnapshot snapshot, BackendSymbolHandle symbol, bool includeDeclaration)
+    {
+        throw new InvalidOperationException("Cvolo compiler tooling is unavailable.");
+    }
+
+    public BackendRenamePreparation? PrepareRename(BackendSnapshot snapshot, BackendDocumentHandle document, int position)
+    {
+        throw new InvalidOperationException("Cvolo compiler tooling is unavailable.");
+    }
+
+    public BackendRenameResult RenameSymbol(BackendSnapshot snapshot, BackendSymbolHandle symbol, string newName)
     {
         throw new InvalidOperationException("Cvolo compiler tooling is unavailable.");
     }

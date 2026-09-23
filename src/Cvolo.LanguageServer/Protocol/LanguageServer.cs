@@ -30,6 +30,8 @@ internal sealed class LanguageServer(
     private DefinitionHandler? _definition;
     private DocumentSymbolHandler? _documentSymbols;
     private SemanticTokensHandler? _semanticTokens;
+    private ReferencesHandler? _references;
+    private RenameHandler? _rename;
     private SemanticTokensRefreshCoordinator? _refresh;
     private Timer? _deadClientExitTimer;
 
@@ -78,6 +80,12 @@ internal sealed class LanguageServer(
     /// textDocument/semanticTokens/full handler.
     /// </summary>
     internal SemanticTokensHandler SemanticTokens => _semanticTokens ??= new SemanticTokensHandler(logger, () => Store, () => _state.SemanticTokenTypes, () => _state.SemanticTokenModifiers);
+
+    /// <summary>textDocument/references handler.</summary>
+    internal ReferencesHandler References => _references ??= new ReferencesHandler(logger, () => Store);
+
+    /// <summary>textDocument/prepareRename and textDocument/rename handler.</summary>
+    internal RenameHandler Rename => _rename ??= new RenameHandler(logger, () => Store, () => _state.DocumentChangesSupported);
 
     /// <summary>
     /// Server-to-client semantic-token refresh coordinator.
@@ -164,13 +172,10 @@ internal sealed class LanguageServer(
                     ResolveProvider = false,
                     TriggerCharacters = [".", "~"],
                 },
-                SignatureHelpProvider = new SignatureHelpOptions
-                {
-                    TriggerCharacters = ["(", ","],
-                    RetriggerCharacters = [","],
-                },
                 HoverProvider = true,
                 DefinitionProvider = true,
+                ReferencesProvider = true,
+                RenameProvider = _state.PrepareRenameSupported ? (object)new RenameOptionsPayload(true) : true,
                 DocumentSymbolProvider = true,
                 SemanticTokensProvider = _state.SemanticTokensEnabled
                     ? new SemanticTokensOptions

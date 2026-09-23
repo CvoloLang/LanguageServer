@@ -65,6 +65,14 @@ internal interface ILanguageBackend
     /// </summary>
     BackendSnapshot CaptureCurrentSnapshot(BackendProject project);
     /// <summary>
+    /// Refreshes closed project documents from disk while preserving editor-owned overlays for
+    /// <paramref name="openDocuments"/>, then returns the coherent current snapshot. This keeps
+    /// semantic state synchronized after a client applies a workspace edit to closed files.
+    /// Backends without disk-backed project documents may use the default snapshot capture.
+    /// </summary>
+    BackendSnapshot SynchronizeClosedDocuments(BackendProject project, IReadOnlyList<BackendDocumentHandle> openDocuments)
+        => CaptureCurrentSnapshot(project);
+    /// <summary>
     /// Reports whether <paramref name="snapshot"/> is still the project's
     /// current snapshot. Implementations compare an adapter-owned generation,
     /// not object identity.
@@ -115,6 +123,18 @@ internal interface ILanguageBackend
     /// mapped (§17, §18).
     /// </summary>
     BackendDefinitionResult GetDefinitions(BackendSnapshot snapshot, BackendSymbolHandle symbol);
+
+    /// <summary>Returns project-source occurrences of a snapshot-scoped semantic symbol.</summary>
+    BackendReferenceResult GetReferences(BackendSnapshot snapshot, BackendSymbolHandle symbol, bool includeDeclaration)
+        => new(new Dictionary<DocumentUri, string>(), Array.Empty<BackendReferenceLocation>());
+
+    /// <summary>Resolves and validates the rename target at an absolute UTF-16 position.</summary>
+    BackendRenamePreparation? PrepareRename(BackendSnapshot snapshot, BackendDocumentHandle document, int position)
+        => null;
+
+    /// <summary>Computes a complete, snapshot-pure semantic rename plan.</summary>
+    BackendRenameResult RenameSymbol(BackendSnapshot snapshot, BackendSymbolHandle symbol, string newName)
+        => new BackendRenameFailure("Rename is not supported by this language backend.");
 
     /// <summary>
     /// Returns the declaration outline of <paramref name="document"/> from the
