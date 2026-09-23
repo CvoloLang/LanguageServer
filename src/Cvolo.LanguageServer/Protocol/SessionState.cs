@@ -111,7 +111,8 @@ internal sealed class SessionState
 
         var fullRequested = IsFullRequested(semanticTokens?.Requests?.Full);
         var relativeFormat = semanticTokens?.Formats?.Contains("relative", StringComparer.Ordinal) == true;
-        var augments = semanticTokens?.AugmentsSyntaxTokens != false;
+        // LSP-5 is augmentation-only: absence is not consent to mix semantic and lexical streams.
+        var augments = semanticTokens?.AugmentsSyntaxTokens == true;
 
         SemanticTokensEnabled = fullRequested && relativeFormat && augments && SemanticTokenTypes.Length > 0;
     }

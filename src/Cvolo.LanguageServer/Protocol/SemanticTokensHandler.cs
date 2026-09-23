@@ -60,15 +60,19 @@ internal sealed class SemanticTokensHandler(
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (!Store.IsCurrent(context))
-        {
-            logger.Debug($"[semanticTokens] discarded stale result for '{documentUri}'.");
-            return null;
-        }
-
         int[]? data = Encode(result, context.Document.Text, tokenTypesAccessor(), tokenModifiersAccessor());
         if (data is null)
         {
+            return null;
+        }
+
+        // Encoding can be non-trivial for large documents. Perform the final freshness
+        // gate after normalization/encoding so no result from an old project generation
+        // can escape as current semantic highlighting.
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!Store.IsCurrent(context))
+        {
+            logger.Debug($"[semanticTokens] discarded stale result for '{documentUri}'.");
             return null;
         }
 
@@ -207,6 +211,7 @@ internal sealed class SemanticTokensHandler(
         BackendSymbolKind.Enum => ["enum", "type"],
         BackendSymbolKind.Interface => ["interface", "type"],
         BackendSymbolKind.Protocol => ["interface", "type"],
+        BackendSymbolKind.Delegate => ["type"],
         BackendSymbolKind.TypeAlias or BackendSymbolKind.OtherType => ["type"],
         BackendSymbolKind.TypeParameter => ["typeParameter", "type"],
         BackendSymbolKind.Parameter => ["parameter", "variable"],

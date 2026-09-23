@@ -517,6 +517,7 @@ internal sealed class CvoloLanguageBackend(IReadOnlyList<string> workspaceFolder
             ToolingSymbolKind.EnumMember => BackendSymbolKind.EnumMember,
             ToolingSymbolKind.Interface => BackendSymbolKind.Interface,
             ToolingSymbolKind.Protocol => BackendSymbolKind.Protocol,
+            ToolingSymbolKind.Delegate => BackendSymbolKind.Delegate,
             ToolingSymbolKind.TypeAlias => BackendSymbolKind.TypeAlias,
             ToolingSymbolKind.TypeParameter => BackendSymbolKind.TypeParameter,
             ToolingSymbolKind.Function => BackendSymbolKind.Function,

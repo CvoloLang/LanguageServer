@@ -181,6 +181,7 @@ internal sealed class DocumentSymbolHandler(ILspLogger logger, Func<DocumentStor
             BackendSymbolKind.EnumMember => SymbolKind.EnumMember,
             BackendSymbolKind.Interface => SymbolKind.Interface,
             BackendSymbolKind.Protocol => SymbolKind.Interface,
+            BackendSymbolKind.Delegate => SymbolKind.Class,
             BackendSymbolKind.TypeAlias => SymbolKind.Class,
             BackendSymbolKind.TypeParameter => SymbolKind.TypeParameter,
             BackendSymbolKind.Function => SymbolKind.Function,

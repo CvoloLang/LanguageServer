@@ -94,7 +94,8 @@ internal interface ILanguageBackend
     /// Computes signature help for the call containing <paramref name="position"/> from the same
     /// coherent snapshot used by the editor request. Returns null when no callable is bound.
     /// </summary>
-    BackendSignatureHelpResult? GetSignatureHelp(BackendSnapshot snapshot, BackendDocumentHandle document, int position);
+    BackendSignatureHelpResult? GetSignatureHelp(BackendSnapshot snapshot, BackendDocumentHandle document, int position)
+        => null;
 
     /// <summary>
     /// Resolves the backend-neutral symbol at <paramref name="position"/> (an
@@ -126,5 +127,6 @@ internal interface ILanguageBackend
     /// <paramref name="snapshot"/> (§13, §14). Classification is compiler-owned and semantic;
     /// unresolved occurrences are omitted.
     /// </summary>
-    BackendSemanticTokenResult GetSemanticTokens(BackendSnapshot snapshot, BackendDocumentHandle document);
+    BackendSemanticTokenResult GetSemanticTokens(BackendSnapshot snapshot, BackendDocumentHandle document)
+        => new(Array.Empty<BackendSemanticToken>());
 }

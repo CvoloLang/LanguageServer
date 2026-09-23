@@ -27,6 +27,7 @@ internal enum BackendSymbolKind
     EnumMember,
     Interface,
     Protocol,
+    Delegate,
     TypeAlias,
     TypeParameter,
     Function,
