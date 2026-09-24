@@ -82,19 +82,29 @@ internal sealed class SignatureHelpParams
     public TextDocumentIdentifier? TextDocument { get; init; }
 
     public Position? Position { get; init; }
+
+    public SignatureHelpContext? Context { get; init; }
 }
 
 internal sealed record SignatureHelpResponse(
     SignatureInformationPayload[] Signatures,
     int ActiveSignature,
-    int ActiveParameter);
+    int? ActiveParameter);
 
 internal sealed record SignatureInformationPayload(
     string Label,
     ParameterInformationPayload[] Parameters,
-    string? Documentation = null);
+    string? Documentation = null,
+    int? ActiveParameter = null);
 
-internal sealed record ParameterInformationPayload(string Label);
+/// <summary>
+/// One parameter's label. Either the exact display text (when the client does not negotiate
+/// label offset support) or a two-element array <c>[start, end]</c> of UTF-16 offsets into the
+/// signature label (LSP 3.17 <c>parameterInformation.label</c>).
+/// </summary>
+internal sealed record ParameterInformationPayload(
+    object Label,
+    string? Documentation = null);
 
 /// <summary>
 /// LSP 3.17 <c>ServerInfo</c>.
@@ -174,6 +184,10 @@ internal sealed class TextDocumentClientCapabilitiesPayload
     public SemanticTokensClientCapabilitiesPayload? SemanticTokens { get; init; }
 
     public RenameClientCapabilitiesPayload? Rename { get; init; }
+
+    public CompletionClientCapabilitiesPayload? Completion { get; init; }
+
+    public SignatureHelpClientCapabilitiesPayload? SignatureHelp { get; init; }
 }
 
 internal sealed class RenameClientCapabilitiesPayload
@@ -219,6 +233,61 @@ internal sealed class PublishDiagnosticsClientCapabilitiesPayload
 internal sealed class HoverClientCapabilitiesPayload
 {
     public string[]? ContentFormat { get; init; }
+}
+
+/// <summary>
+/// Server-side shape of <c>textDocument.completion</c> client capabilities. The pinned protocol
+/// model surfaces snippet support but not <c>completionItem.resolveSupport.properties</c>, so the
+/// server reads its own superset view of the payload (??25, ??37).
+/// </summary>
+internal sealed class CompletionClientCapabilitiesPayload
+{
+    public CompletionItemClientCapabilitiesPayload? CompletionItem { get; init; }
+
+    public bool? ContextSupport { get; init; }
+}
+
+internal sealed class CompletionItemClientCapabilitiesPayload
+{
+    public bool? SnippetSupport { get; init; }
+
+    public string[]? DocumentationFormat { get; init; }
+
+    public CompletionResolveSupportClientCapabilitiesPayload? ResolveSupport { get; init; }
+}
+
+/// <summary>
+/// <c>completionItem.resolveSupport.properties</c>: the client-declared item properties it will
+/// resolve through <c>completionItem/resolve</c>. Absence means the historical default
+/// <c>{ "detail", "documentation" }</c>; an explicitly empty array means nothing is resolvable.
+/// </summary>
+internal sealed class CompletionResolveSupportClientCapabilitiesPayload
+{
+    public string[]? Properties { get; init; }
+}
+
+/// <summary>
+/// Server-side shape of <c>textDocument.signatureHelp</c> client capabilities. The pinned protocol
+/// model lacks <c>signatureInformation.activeParameterSupport</c>, so the server reads its own
+/// superset view of the payload (??14, ??11.5).
+/// </summary>
+internal sealed class SignatureHelpClientCapabilitiesPayload
+{
+    public SignatureInformationClientCapabilitiesPayload? SignatureInformation { get; init; }
+
+    public bool? ContextSupport { get; init; }
+}
+
+internal sealed class SignatureInformationClientCapabilitiesPayload
+{
+    public bool? ActiveParameterSupport { get; init; }
+
+    public SignatureParameterInformationClientCapabilitiesPayload? ParameterInformation { get; init; }
+}
+
+internal sealed class SignatureParameterInformationClientCapabilitiesPayload
+{
+    public bool? LabelOffsetSupport { get; init; }
 }
 
 /// <summary>

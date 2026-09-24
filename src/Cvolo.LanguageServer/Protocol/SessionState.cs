@@ -74,6 +74,13 @@ internal sealed class SessionState
         ComputeSemanticTokens(initializeParams);
         PrepareRenameSupported = initializeParams?.Capabilities?.TextDocument?.Rename?.PrepareSupport == true;
         DocumentChangesSupported = initializeParams?.Capabilities?.Workspace?.WorkspaceEdit?.DocumentChanges == true;
+        CompletionSnippetSupport = initializeParams?.Capabilities?.TextDocument?.Completion?.CompletionItem?.SnippetSupport == true;
+        CompletionResolveSupportProperties = initializeParams?.Capabilities?.TextDocument?.Completion?.CompletionItem?.ResolveSupport?.Properties;
+        CompletionDocumentationMarkdown = ComputeCompletionDocumentationMarkdown(initializeParams);
+        SignatureHelpLabelOffsetSupport =
+            initializeParams?.Capabilities?.TextDocument?.SignatureHelp?.SignatureInformation?.ParameterInformation?.LabelOffsetSupport == true;
+        SignatureHelpActiveParameterSupport =
+            initializeParams?.Capabilities?.TextDocument?.SignatureHelp?.SignatureInformation?.ActiveParameterSupport == true;
         _initializeReceived = true;
     }
 
@@ -148,6 +155,55 @@ internal sealed class SessionState
     private static bool ComputeHoverMarkdown(InitializeRequestParams? initializeParams)
     {
         string[]? formats = initializeParams?.Capabilities?.TextDocument?.Hover?.ContentFormat;
+        if (formats is null || formats.Length == 0)
+        {
+            return false;
+        }
+
+        var markdown = Array.IndexOf(formats, "markdown");
+        if (markdown < 0)
+        {
+            return false;
+        }
+
+        var plaintext = Array.IndexOf(formats, "plaintext");
+        return plaintext < 0 || markdown < plaintext;
+    }
+
+    /// <summary>
+    /// Whether the client negotiated snippet-capable completion: <c>completionItem.snippetSupport = true</c>.
+    /// Only then may callable insertion templates be snippet-encoded (§23, §37).
+    /// </summary>
+    public bool CompletionSnippetSupport { get; private set; }
+
+    /// <summary>
+    /// <c>completionItem.resolveSupport.properties</c> as sent by the client. Null means the
+    /// client sent no resolveSupport (historical default: <c>{ "detail", "documentation" }</c>);
+    /// an empty array means nothing is resolvable (§25, §37).
+    /// </summary>
+    public string[]? CompletionResolveSupportProperties { get; private set; }
+
+    /// <summary>Whether lazy completion documentation should be emitted as markdown (§14).</summary>
+    public bool CompletionDocumentationMarkdown { get; private set; }
+
+    /// <summary>
+    /// Whether the client accepts <c>[start, end]</c> parameter-label offsets into the signature
+    /// label (LSP 3.17 <c>signatureInformation.parameterInformation.labelOffsetSupport</c>). When
+    /// false, parameter labels are sent as exact substrings of the signature label (§11, §14).
+    /// </summary>
+    public bool SignatureHelpLabelOffsetSupport { get; private set; }
+
+    /// <summary>
+    /// Whether the client advertises per-signature <c>activeParameter</c>
+    /// (<c>signatureInformation.activeParameterSupport</c>). Only then are per-candidate active
+    /// parameters emitted; the top-level activeParameter is always derived from the active
+    /// signature's compiler value (§11, §11.5).
+    /// </summary>
+    public bool SignatureHelpActiveParameterSupport { get; private set; }
+
+    private static bool ComputeCompletionDocumentationMarkdown(InitializeRequestParams? initializeParams)
+    {
+        string[]? formats = initializeParams?.Capabilities?.TextDocument?.Completion?.CompletionItem?.DocumentationFormat;
         if (formats is null || formats.Length == 0)
         {
             return false;

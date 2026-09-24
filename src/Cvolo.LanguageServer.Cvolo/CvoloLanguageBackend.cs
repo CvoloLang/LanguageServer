@@ -357,12 +357,73 @@ internal sealed class CvoloLanguageBackend(IReadOnlyList<string> workspaceFolder
         var items = new List<BackendCompletionItem>(result.Candidates.Count);
         foreach (CompletionCandidate candidate in result.Candidates)
         {
-            items.Add(new BackendCompletionItem(candidate.Label, candidate.InsertText, MapCompletionKind(candidate.Kind), candidate.IsSnippet));
+            items.Add(new BackendCompletionItem(
+                candidate.Label,
+                candidate.PlainInsertText,
+                MapCompletionKind(candidate.Kind),
+                candidate.Detail,
+                MapInsertionPlan(candidate.InsertionPlan),
+                candidate.ItemId is { } itemId ? new CvoloCompletionResolveHandle(toolingSnapshot, itemId) : null,
+                MapResolvableFields(candidate.ResolvableFields)));
         }
 
         return new BackendCompletionResult(
             new CoreTextSpan(toolingSpan.Start, toolingSpan.Length),
             items);
+    }
+
+    private static BackendCompletionInsertionPlan? MapInsertionPlan(CompletionInsertionPlan? plan)
+    {
+        if (plan is null)
+            return null;
+
+        var segments = new List<BackendCompletionInsertSegment>(plan.SnippetSegments.Count);
+        foreach (CompletionInsertSegment segment in plan.SnippetSegments)
+        {
+            switch (segment)
+            {
+                case CompletionLiteral literal:
+                    segments.Add(new BackendCompletionLiteral(literal.Text));
+                    break;
+                case CompletionPlaceholder placeholder:
+                    segments.Add(new BackendCompletionPlaceholder(placeholder.DefaultText));
+                    break;
+                case CompletionFinalCursor:
+                    segments.Add(new BackendCompletionFinalCursor());
+                    break;
+                default:
+                    throw new InvalidOperationException($"Unknown completion insertion segment '{segment.GetType().Name}'.");
+            }
+        }
+
+        return new BackendCompletionInsertionPlan(segments);
+    }
+
+    private static BackendCompletionResolvableFields MapResolvableFields(CompletionResolvableFields fields)
+    {
+        var result = BackendCompletionResolvableFields.None;
+        if (fields.HasFlag(CompletionResolvableFields.Detail))
+            result |= BackendCompletionResolvableFields.Detail;
+        if (fields.HasFlag(CompletionResolvableFields.Documentation))
+            result |= BackendCompletionResolvableFields.Documentation;
+        return result;
+    }
+
+    public BackendCompletionResolvedInfo? ResolveCompletion(BackendSnapshot snapshot, BackendCompletionResolveHandle handle)
+    {
+        var toolingSnapshot = ((ToolingBackendSnapshot)snapshot).Snapshot;
+        if (handle is not CvoloCompletionResolveHandle completionHandle || !ReferenceEquals(completionHandle.Snapshot, toolingSnapshot))
+        {
+            // A foreign or mismatched completion handle must never resolve against the wrong
+            // snapshot; return no result rather than an unrelated item (§28, §30).
+            return null;
+        }
+
+        CompletionResolvedInfo? resolved = toolingSnapshot.ResolveCompletion(completionHandle.ItemId);
+        if (resolved is null)
+            return null;
+
+        return new BackendCompletionResolvedInfo(resolved.Detail, resolved.Documentation);
     }
 
     public BackendSignatureHelpResult? GetSignatureHelp(BackendSnapshot snapshot, BackendDocumentHandle document, int position)
@@ -376,18 +437,21 @@ internal sealed class CvoloLanguageBackend(IReadOnlyList<string> workspaceFolder
         if (position < 0 || position > toolingDocument.Text.Length)
             throw new ArgumentOutOfRangeException(nameof(position), position, "The signature-help position is outside the captured document text.");
 
-        SignatureHelpResult? result = toolingDocument.GetSignatureHelp(position);
+        SignatureHelpInfo? result = toolingDocument.GetSignatureHelp(position);
         if (result is null)
             return null;
 
         var signatures = result.Signatures
-            .Select(signature => new BackendSignatureHelpItem(
+            .Select(signature => new BackendSignatureCandidate(
                 signature.Label,
-                signature.Parameters.Select(parameter => new BackendSignatureHelpParameter(parameter.Label)).ToArray(),
-                signature.Documentation))
+                signature.Documentation,
+                signature.Parameters.Select(parameter => new BackendSignatureParameter(
+                    new BackendSignatureLabelSpan(parameter.LabelSpan.Start, parameter.LabelSpan.Length),
+                    parameter.Documentation)).ToArray(),
+                signature.ActiveParameter))
             .ToArray();
 
-        return new BackendSignatureHelpResult(signatures, result.ActiveSignature, result.ActiveParameter);
+        return new BackendSignatureHelpResult(signatures, result.ActiveSignature);
     }
 
     public BackendSymbolInfo? GetSymbolAtPosition(BackendSnapshot snapshot, BackendDocumentHandle document, int position)
@@ -787,4 +851,16 @@ internal sealed class CvoloSymbolHandle(ProjectSnapshot snapshot, SymbolId symbo
     public ProjectSnapshot Snapshot { get; } = snapshot;
 
     public SymbolId SymbolId { get; } = symbolId;
+}
+
+/// <summary>
+/// Opaque completion-resolve handle backed by the tooling's snapshot-scoped CompletionItemId
+/// plus the tooling snapshot it was minted from, so a handle can never resolve against a
+/// different snapshot.
+/// </summary>
+internal sealed class CvoloCompletionResolveHandle(ProjectSnapshot snapshot, CompletionItemId itemId) : BackendCompletionResolveHandle
+{
+    public ProjectSnapshot Snapshot { get; } = snapshot;
+
+    public CompletionItemId ItemId { get; } = itemId;
 }

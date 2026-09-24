@@ -23,6 +23,7 @@ internal sealed class LanguageServer(
     private readonly DiagnosticSink _diagnostics = new(logger);
     private readonly CancellationTokenSource _sessionCancellation = new();
     private DocumentStore? _store;
+    private CompletionResolveStore? _resolveStore;
     private TextDocumentSyncHandler? _sync;
     private CompletionHandler? _completion;
     private SignatureHelpHandler? _signatureHelp;
@@ -54,12 +55,27 @@ internal sealed class LanguageServer(
     internal TextDocumentSyncHandler Sync => _sync ??= new TextDocumentSyncHandler(logger, _diagnostics, () => Store, () => Refresh.RequestRefresh());
 
     /// <summary>
-    /// textDocument/completion handler.
+    /// Session-scoped, bounded store of completion-resolve entries guarding opaque data tokens.
     /// </summary>
-    internal CompletionHandler Completion => _completion ??= new CompletionHandler(logger, () => Store);
+    internal CompletionResolveStore ResolveStore => _resolveStore ??= new CompletionResolveStore();
+
+    /// <summary>
+    /// textDocument/completion and completionItem/resolve handler.
+    /// </summary>
+    internal CompletionHandler Completion => _completion ??= new CompletionHandler(
+        logger,
+        () => Store,
+        () => _state.CompletionSnippetSupport,
+        () => _state.CompletionResolveSupportProperties!,
+        () => _state.CompletionDocumentationMarkdown,
+        () => ResolveStore);
 
     /// <summary>textDocument/signatureHelp handler.</summary>
-    internal SignatureHelpHandler SignatureHelp => _signatureHelp ??= new SignatureHelpHandler(logger, () => Store);
+    internal SignatureHelpHandler SignatureHelp => _signatureHelp ??= new SignatureHelpHandler(
+        logger,
+        () => Store,
+        () => _state.SignatureHelpLabelOffsetSupport,
+        () => _state.SignatureHelpActiveParameterSupport);
 
     /// <summary>
     /// textDocument/hover handler.
@@ -169,8 +185,12 @@ internal sealed class LanguageServer(
                 },
                 CompletionProvider = new CompletionOptions
                 {
-                    ResolveProvider = false,
+                    ResolveProvider = true,
                     TriggerCharacters = [".", "~"],
+                },
+                SignatureHelpProvider = new SignatureHelpOptions
+                {
+                    TriggerCharacters = ["(", ","],
                 },
                 HoverProvider = true,
                 DefinitionProvider = true,

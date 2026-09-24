@@ -207,17 +207,24 @@ public class CompletionHandlerTests : IDisposable
     }
 
     [Fact]
-    public async Task CompletionItemResolve_IsNotRegistered_AndSessionSurvives()
+    public async Task CompletionItemResolve_IsRegistered_AndResolvesWithoutData_ReturnsItemUnchanged()
     {
         await InitializeAsync();
 
-        var error = await _session.Client
-            .ExpectErrorAsync("completionItem/resolve", new CompletionItem { Label = "x" })
+        // Resolve is now a registered method (resolveProvider=true), but an item
+        // without server-owned data has nothing to enrich, so it must round-trip
+        // untouched rather than fail the session (LSP-7 §27.4).
+        CompletionItem request = new() { Label = "x" };
+        var response = await _session.Client
+            .ResolveCompletionItemAsync(request)
             .WithTimeout("completionItem/resolve");
 
-        Assert.Equal(-32601, (int?)error.ErrorCode);
+        Assert.NotNull(response);
+        Assert.Equal("x", response!.Label);
+        Assert.Null(response.Detail);
+        Assert.Null(response.Data);
 
-        // The unsupported resolve request must not damage the session.
+        // The resolve round-trip must not damage the session.
         const string source = "int main() {\n    ret|\n}\n";
         await OpenAsync(source);
         CompletionList? result = await CompleteAsync(source);

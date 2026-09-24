@@ -101,6 +101,36 @@ internal sealed class TestClient : IDisposable
             cancellationToken);
     }
 
+    public Task<CompletionItem?> ResolveCompletionItemAsync(CompletionItem item)
+    {
+        return _rpc.InvokeWithParameterObjectAsync<CompletionItem?>(
+            Methods.TextDocumentCompletionResolveName,
+            item);
+    }
+
+    public Task<CompletionItem?> ResolveCompletionItemWithTokenAsync(CompletionItem item, CancellationToken cancellationToken)
+    {
+        return _rpc.InvokeWithParameterObjectAsync<CompletionItem?>(
+            Methods.TextDocumentCompletionResolveName,
+            item,
+            cancellationToken);
+    }
+
+    public Task<SignatureHelp?> SignatureHelpAsync(Uri uri, int line, int character)
+    {
+        return _rpc.InvokeWithParameterObjectAsync<SignatureHelp?>(
+            Methods.TextDocumentSignatureHelpName,
+            PositionParams(uri, line, character));
+    }
+
+    public Task<SignatureHelp?> SignatureHelpWithTokenAsync(Uri uri, int line, int character, CancellationToken cancellationToken)
+    {
+        return _rpc.InvokeWithParameterObjectAsync<SignatureHelp?>(
+            Methods.TextDocumentSignatureHelpName,
+            PositionParams(uri, line, character),
+            cancellationToken);
+    }
+
     /// <summary>
     /// Round-trips an unknown method so any notification sent before it is
     /// guaranteed to have been dispatched by the server before this returns.

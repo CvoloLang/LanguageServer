@@ -99,6 +99,14 @@ internal interface ILanguageBackend
     BackendCompletionResult GetCompletions(BackendSnapshot snapshot, BackendDocumentHandle document, int position);
 
     /// <summary>
+    /// Resolves the lazily-requested fields of one completion item against the exact snapshot
+    /// its handle was minted from. A handle from a foreign snapshot yields null, never an
+    /// unrelated item. Resolve never recomputes or changes the insertion template.
+    /// </summary>
+    BackendCompletionResolvedInfo? ResolveCompletion(BackendSnapshot snapshot, BackendCompletionResolveHandle handle)
+        => null;
+
+    /// <summary>
     /// Computes signature help for the call containing <paramref name="position"/> from the same
     /// coherent snapshot used by the editor request. Returns null when no callable is bound.
     /// </summary>

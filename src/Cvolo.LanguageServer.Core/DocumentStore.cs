@@ -388,6 +388,16 @@ internal sealed class DocumentStore(ILanguageBackend backend, ICoreLogger? logge
     }
 
     /// <summary>
+    /// Resolves the lazily-requested fields of one completion item against the exact captured
+    /// project snapshot. A handle from a foreign snapshot yields null. Callers must verify the
+    /// context is still current and the store entry is still valid before and after resolving.
+    /// </summary>
+    public BackendCompletionResolvedInfo? ResolveCompletion(SemanticRequestContext context, BackendCompletionResolveHandle handle)
+    {
+        return backend.ResolveCompletion(context.CurrentProjectSnapshot, handle);
+    }
+
+    /// <summary>
     /// Resolves the symbol at <paramref name="position"/> from the document's own
     /// coherent snapshot captured in <paramref name="context"/>. Callers must
     /// discard the result unless <see cref="IsCurrent(SemanticRequestContext)"/>

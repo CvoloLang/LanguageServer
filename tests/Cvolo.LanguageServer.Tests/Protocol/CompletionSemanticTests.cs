@@ -1,4 +1,5 @@
 using Cvolo.LanguageServer.Core.Documents;
+using Cvolo.LanguageServer.Protocol;
 using Cvolo.LanguageServer.Tests.TestSupport;
 using Microsoft.VisualStudio.LanguageServer.Protocol;
 using Xunit;
@@ -34,6 +35,30 @@ public class CompletionSemanticTests : IDisposable
     private async Task InitializeAsync()
     {
         await _session.Client.InitializeAsync(processId: null, rootPath: _workspace.DirectoryPath).WithTimeout("initialize");
+        await _session.Client.NotifyInitializedAsync().WithTimeout("initialized");
+    }
+
+    private async Task InitializeSnippetCapableAsync()
+    {
+        var capabilities = new ClientCapabilitiesPayload
+        {
+            TextDocument = new TextDocumentClientCapabilitiesPayload
+            {
+                Completion = new CompletionClientCapabilitiesPayload
+                {
+                    CompletionItem = new CompletionItemClientCapabilitiesPayload
+                    {
+                        SnippetSupport = true,
+                    },
+                },
+            },
+        };
+        await _session.Client.InitializeWithAsync(new InitializeRequestParams
+        {
+            ProcessId = null,
+            RootUri = new Uri(_workspace.DirectoryPath),
+            Capabilities = capabilities,
+        }).WithTimeout("initialize");
         await _session.Client.NotifyInitializedAsync().WithTimeout("initialized");
     }
 
@@ -199,7 +224,7 @@ public class CompletionSemanticTests : IDisposable
     [Fact]
     public async Task ExtensionDestructor_OffersSnippetCompletion()
     {
-        await InitializeAsync();
+        await InitializeSnippetCapableAsync();
         const string source = "struct Name { int value; }\nextension Name {\n    ~|\n}\n";
         await OpenAsync("main.cvl", source);
 
@@ -209,7 +234,98 @@ public class CompletionSemanticTests : IDisposable
         CompletionItem item = Assert.Single(result!.Items);
         Assert.Equal("~Name()", item.Label);
         Assert.Equal(InsertTextFormat.Snippet, item.InsertTextFormat);
-        Assert.Contains("~Name()", item.TextEdit!.NewText, StringComparison.Ordinal);
+        Assert.Equal("~Name() {\n    ${1:}\n}", item.TextEdit!.NewText);
+        Assert.Equal(CompletionItemKind.Method, item.Kind);
+    }
+
+    [Fact]
+    public async Task OverloadedCallable_OffersDistinctCandidates_WithDetails_AndResolveData()
+    {
+        // LSP-7 §21: overloads must stay distinct; the initial list carries a short
+        // compiler-owned detail per overload and an opaque resolve token per candidate.
+        await InitializeAsync();
+        const string source =
+            "int Add(int left, int right) { return left + right; }\n" +
+            "int Add(int left, int right, int total) { return total; }\n" +
+            "int main() { return Add|; }\n";
+        await OpenAsync("main.cvl", source);
+
+        CompletionList? result = await CompleteAsync("main.cvl", source);
+
+        Assert.NotNull(result);
+        CompletionItem[] adds = result!.Items.Where(item => item.Label == "Add").ToArray();
+        Assert.Equal(2, adds.Length);
+        Assert.Equal("int Add(int left, int right)", adds[0].Detail);
+        Assert.Equal("int Add(int left, int right, int total)", adds[1].Detail);
+        Assert.NotEqual(adds[0].Detail, adds[1].Detail);
+        Assert.All(adds, item => Assert.NotNull(item.Data));
+        Assert.All(adds, item => Assert.IsType<string>(item.Data));
+        Assert.NotEqual(adds[0].Data, adds[1].Data);
+    }
+
+    [Fact]
+    public async Task CallableCandidate_ResolvesDetailAndDocumentation()
+    {
+        // LSP-7 §25/§30: completionItem/resolve fills compiler-owned detail and
+        // documentation for a candidate minted against the current snapshot.
+        await InitializeAsync();
+        const string source =
+            "/// Computes the sum of two numbers.\n" +
+            "int Add(int left, int right) { return left + right; }\n" +
+            "int main() { return Add(|); }\n";
+        await OpenAsync("main.cvl", source);
+
+        CompletionList? complete = await CompleteAsync("main.cvl", source);
+        Assert.NotNull(complete);
+        CompletionItem item = Assert.Single(complete!.Items, candidate => candidate.Label == "Add");
+        Assert.NotNull(item.Data);
+
+        var resolved = await _session.Client
+            .ResolveCompletionItemAsync(item)
+            .WithTimeout("completionItem/resolve");
+
+        Assert.NotNull(resolved);
+        Assert.Equal("int Add(int left, int right)", resolved!.Detail);
+        Assert.True(resolved.Documentation.HasValue);
+        Assert.True(resolved.Documentation!.Value.TryGetSecond(out MarkupContent? documentation));
+        Assert.Equal(MarkupKind.PlainText, documentation.Kind);
+        Assert.Equal("Computes the sum of two numbers.", documentation.Value);
+        Assert.Equal(item.Label, resolved.Label);
+    }
+
+    [Fact]
+    public async Task SnippetCapableClient_ReceivesSnippetTextEdit_ForCallable()
+    {
+        // LSP-7 §23: a snippet-capable client gets a compiler-owned insertion template
+        // (numbered tab stops, $0 final cursor); a plain client gets the plain text.
+        await InitializeSnippetCapableAsync();
+        const string source =
+            "int Add(int left, int right) { return left + right; }\n" +
+            "int main() { return Add|; }\n";
+        await OpenAsync("main.cvl", source);
+
+        CompletionList? result = await CompleteAsync("main.cvl", source);
+        Assert.NotNull(result);
+        CompletionItem item = Assert.Single(result!.Items, candidate => candidate.Label == "Add");
+        Assert.Equal(InsertTextFormat.Snippet, item.InsertTextFormat);
+        Assert.Equal("Add(${1:left}, ${2:right})$0", item.TextEdit!.NewText);
+    }
+
+    [Fact]
+    public async Task PlainClient_ReceivesPlainTextEdit_ForCallable()
+    {
+        // The same source without snippetSupport must never expose snippet syntax.
+        await InitializeAsync();
+        const string source =
+            "int Add(int left, int right) { return left + right; }\n" +
+            "int main() { return Add|; }\n";
+        await OpenAsync("main.cvl", source);
+
+        CompletionList? result = await CompleteAsync("main.cvl", source);
+        Assert.NotNull(result);
+        CompletionItem item = Assert.Single(result!.Items, candidate => candidate.Label == "Add");
+        Assert.Equal(InsertTextFormat.Plaintext, item.InsertTextFormat);
+        Assert.Equal("Add", item.TextEdit!.NewText);
     }
 
     [Fact]

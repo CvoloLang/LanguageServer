@@ -61,7 +61,7 @@ public class CompletionMalformedResultTests : IDisposable
         await OpenAsync();
         _backend.CompletionResultFactory = _ => new BackendCompletionResult(
             new TextSpan(start, length),
-            [new BackendCompletionItem("x", "x", BackendCompletionKind.Local)]);
+            [new BackendCompletionItem("x", "x", BackendCompletionKind.Local, Detail: null, InsertionPlan: null, ResolveHandle: null, ResolvableFields: BackendCompletionResolvableFields.None)]);
 
         CompletionList? result = await CompleteAsync(0, cursorChar);
 
@@ -74,7 +74,7 @@ public class CompletionMalformedResultTests : IDisposable
         await OpenAsync();
         _backend.CompletionResultFactory = _ => new BackendCompletionResult(
             new TextSpan(0, DocumentText.Length),
-            [new BackendCompletionItem("x", "x", BackendCompletionKind.Local)]);
+            [new BackendCompletionItem("x", "x", BackendCompletionKind.Local, Detail: null, InsertionPlan: null, ResolveHandle: null, ResolvableFields: BackendCompletionResolvableFields.None)]);
 
         CompletionList? result = await CompleteAsync(0, 0);
 
@@ -87,7 +87,7 @@ public class CompletionMalformedResultTests : IDisposable
         await OpenAsync();
         _backend.CompletionResultFactory = position => new BackendCompletionResult(
             new TextSpan(position, 0),
-            [new BackendCompletionItem("x", "x", BackendCompletionKind.Local)]);
+            [new BackendCompletionItem("x", "x", BackendCompletionKind.Local, Detail: null, InsertionPlan: null, ResolveHandle: null, ResolvableFields: BackendCompletionResolvableFields.None)]);
 
         CompletionList? result = await CompleteAsync(0, 0);
 

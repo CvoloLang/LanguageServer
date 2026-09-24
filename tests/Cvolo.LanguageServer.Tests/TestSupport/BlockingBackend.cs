@@ -24,7 +24,7 @@ internal sealed class BlockingBackend : ILanguageBackend
     public int CompletionCalls;
 
     public IReadOnlyList<BackendCompletionItem> CannedItems { get; set; } =
-        [new BackendCompletionItem("canned", "canned", BackendCompletionKind.Local)];
+        [new BackendCompletionItem("canned", "canned", BackendCompletionKind.Local, Detail: null, InsertionPlan: null, ResolveHandle: null, ResolvableFields: BackendCompletionResolvableFields.None)];
 
     /// <summary>When set, replaces the canned result; used to feed malformed spans.</summary>
     public Func<int, BackendCompletionResult>? CompletionResultFactory { get; set; }
@@ -124,7 +124,100 @@ internal sealed class BlockingBackend : ILanguageBackend
 
     public BackendSignatureHelpResult? GetSignatureHelp(BackendSnapshot snapshot, BackendDocumentHandle document, int position)
     {
-        return null;
+        Interlocked.Increment(ref SignatureHelpCalls);
+        _signatureHelpEntered.Set();
+        _signatureHelpBlock.Wait();
+
+        if (ThrowOnSignatureHelp)
+        {
+            throw new InvalidOperationException("simulated signature help failure");
+        }
+
+        return SignatureHelpResultFactory is { } factory ? factory() : CannedSignatureHelp;
+    }
+
+    public BackendCompletionResolvedInfo? ResolveCompletion(BackendSnapshot snapshot, BackendCompletionResolveHandle handle)
+    {
+        Interlocked.Increment(ref ResolveCalls);
+        _resolveEntered.Set();
+        _resolveBlock.Wait();
+
+        if (ThrowOnResolve)
+        {
+            throw new InvalidOperationException("simulated resolve failure");
+        }
+
+        return CannedResolvedInfo;
+    }
+
+    /// <summary>Mints a distinct resolve handle for canned completion items.</summary>
+    public BackendCompletionResolveHandle CreateResolveHandle()
+    {
+        return new FakeResolveHandle(Interlocked.Increment(ref _resolveHandleSeed));
+    }
+
+    private readonly ManualResetEventSlim _signatureHelpBlock = new(initialState: true);
+    private readonly ManualResetEventSlim _signatureHelpEntered = new(initialState: false);
+
+    public int SignatureHelpCalls;
+
+    /// <summary>The signature help result returned by <see cref="GetSignatureHelp"/>.</summary>
+    public BackendSignatureHelpResult? CannedSignatureHelp { get; set; }
+
+    /// <summary>When set, replaces the canned signature help result.</summary>
+    public Func<BackendSignatureHelpResult?>? SignatureHelpResultFactory { get; set; }
+
+    /// <summary>When true, a signature help call throws an ordinary exception.</summary>
+    public bool ThrowOnSignatureHelp { get; set; }
+
+    /// <summary>Arms the next signature help call to block until <see cref="ReleaseSignatureHelp"/>.</summary>
+    public void ArmSignatureHelp()
+    {
+        _signatureHelpEntered.Reset();
+        _signatureHelpBlock.Reset();
+    }
+
+    /// <summary>Lets a blocked signature help call finish.</summary>
+    public void ReleaseSignatureHelp()
+    {
+        _signatureHelpBlock.Set();
+    }
+
+    /// <summary>Waits until a signature help call has entered the backend.</summary>
+    public bool WaitUntilSignatureHelpEntered(TimeSpan timeout)
+    {
+        return _signatureHelpEntered.Wait(timeout);
+    }
+
+    private int _resolveHandleSeed;
+    private readonly ManualResetEventSlim _resolveBlock = new(initialState: true);
+    private readonly ManualResetEventSlim _resolveEntered = new(initialState: false);
+
+    public int ResolveCalls;
+
+    /// <summary>The resolved fields returned by <see cref="ResolveCompletion"/>.</summary>
+    public BackendCompletionResolvedInfo? CannedResolvedInfo { get; set; }
+
+    /// <summary>When true, a resolve call throws an ordinary exception.</summary>
+    public bool ThrowOnResolve { get; set; }
+
+    /// <summary>Arms the next resolve call to block until <see cref="ReleaseResolve"/>.</summary>
+    public void ArmResolve()
+    {
+        _resolveEntered.Reset();
+        _resolveBlock.Reset();
+    }
+
+    /// <summary>Lets a blocked resolve call finish.</summary>
+    public void ReleaseResolve()
+    {
+        _resolveBlock.Set();
+    }
+
+    /// <summary>Waits until a resolve call has entered the backend.</summary>
+    public bool WaitUntilResolveEntered(TimeSpan timeout)
+    {
+        return _resolveEntered.Wait(timeout);
     }
 
     private readonly ManualResetEventSlim _navigationBlock = new(initialState: true);
@@ -215,5 +308,10 @@ internal sealed class BlockingBackend : ILanguageBackend
     private sealed class FakeHandle(DocumentUri uri) : BackendDocumentHandle
     {
         public DocumentUri Uri { get; } = uri;
+    }
+
+    private sealed class FakeResolveHandle(int seed) : BackendCompletionResolveHandle
+    {
+        public int Seed { get; } = seed;
     }
 }

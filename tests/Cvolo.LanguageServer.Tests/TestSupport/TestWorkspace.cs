@@ -4,7 +4,7 @@ namespace Cvolo.LanguageServer.Tests.TestSupport;
 internal sealed class TestWorkspace : IDisposable
 {
     private const string ProjectFileName = "App.cvlproj";
-    private const string ProjectXml = "<Project><ItemGroup /></Project>\r\n";
+    private const string ProjectXml = "<Project Sdk=\"Cvolo.Sdk\" />\r\n";
 
     private TestWorkspace(string directoryPath, string projectFilePath)
     {

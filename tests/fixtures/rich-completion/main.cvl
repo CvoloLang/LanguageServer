@@ -1,0 +1,23 @@
+/// Computes the sum of two numbers.
+int Add(int left, int right) {
+    return left + right;
+}
+
+/// Computes the sum of three numbers.
+int Add(int left, int right, int total) {
+    return left + right + total;
+}
+
+/// Returns the left number.
+int Min(int left, int right) {
+    return left;
+}
+
+int main() {
+    val int sum = Add(1, Min(1, 2));
+    return sum;
+}
+
+int completionAnchor() {
+    return Add;
+}
