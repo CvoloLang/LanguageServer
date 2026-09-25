@@ -43,6 +43,7 @@ internal enum BackendSymbolKind
     Constant,
     Operator,
     OtherType,
+    Keyword,
     Unknown,
 }
 

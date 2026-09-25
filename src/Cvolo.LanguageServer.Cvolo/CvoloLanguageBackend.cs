@@ -860,6 +860,7 @@ internal sealed class CvoloLanguageBackend(
             ToolingSymbolKind.Constant => BackendSymbolKind.Constant,
             ToolingSymbolKind.Operator => BackendSymbolKind.Operator,
             ToolingSymbolKind.OtherType => BackendSymbolKind.OtherType,
+            ToolingSymbolKind.Keyword => BackendSymbolKind.Keyword,
             _ => BackendSymbolKind.Unknown,
         };
     }

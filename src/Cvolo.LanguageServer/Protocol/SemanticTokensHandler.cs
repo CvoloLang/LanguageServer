@@ -221,6 +221,7 @@ internal sealed class SemanticTokensHandler(
         BackendSymbolKind.Function => ["function", "method"],
         BackendSymbolKind.Method or BackendSymbolKind.ExtensionMethod or BackendSymbolKind.Constructor => ["method", "function"],
         BackendSymbolKind.Operator => ["operator", "method", "function"],
+        BackendSymbolKind.Keyword => ["keyword"],
         _ => [],
     };
 }

@@ -145,6 +145,7 @@ internal sealed class SessionState
     [
         "namespace", "type", "struct", "enum", "interface", "typeParameter",
         "parameter", "variable", "property", "enumMember", "function", "method", "operator",
+        "keyword",
     ];
 
     private static readonly string[] CanonicalTokenModifiers = ["declaration", "readonly", "static"];
