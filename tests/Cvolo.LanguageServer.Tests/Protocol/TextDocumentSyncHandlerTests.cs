@@ -234,11 +234,12 @@ public class TextDocumentSyncHandlerTests : IDisposable
     }
 
     [Fact]
-    public async Task WorkspaceFolders_MostSpecificNestedFolder_IsNotCrossed()
+    public async Task WorkspaceFolders_MostSpecificNestedFolder_IsNotCrossed_AndOpensLooseWorkspace()
     {
         using var workspace = TestWorkspace.CreateDirectory(["App.cvlproj", "nested/deeper/x.cvl"]);
         var nested = Path.Combine(workspace.DirectoryPath, "nested");
         var documentPath = Path.Combine(nested, "deeper", "x.cvl");
+        var coreUri = DocumentUri.Create(documentPath);
 
         await _session.Client.InitializeWithAsync(new InitializeRequestParams
         {
@@ -247,9 +248,11 @@ public class TextDocumentSyncHandlerTests : IDisposable
         var store = _session.Server.Store;
 
         await _session.Client.NotifyDidOpenAsync(new Uri(documentPath), "cvolo", 1, "t").WithTimeout("didOpen");
-        await _session.Client.WaitUntilAsync(() => _logger.Has("Warning", "No .cvlproj found"), "no-project warning");
+        await _session.Client.WaitUntilAsync(() => store.TryGet(coreUri, out var state) && state.Text == "t", "loose didOpen applied");
 
-        Assert.Empty(store.OpenUris);
+        Assert.True(store.TryGet(coreUri, out var opened));
+        Assert.Equal("t", opened!.Text);
+        Assert.False(_logger.Has("Warning", "No .cvlproj found"));
     }
 
     [Fact]
@@ -269,7 +272,7 @@ public class TextDocumentSyncHandlerTests : IDisposable
     }
 
     [Fact]
-    public async Task DocumentOutsideAllWorkspaceFolders_InsideRootUri_FallsBackToRootUri()
+    public async Task DocumentOutsideAllWorkspaceFolders_InsideRootUri_FallsBackToRootUriLooseWorkspace()
     {
         using var parent = TestWorkspace.CreateDirectory([]);
         var rootUri = Path.Combine(parent.DirectoryPath, "Inner");
@@ -279,6 +282,7 @@ public class TextDocumentSyncHandlerTests : IDisposable
         File.WriteAllText(Path.Combine(parent.DirectoryPath, "App.cvlproj"), "<Project><ItemGroup /></Project>\r\n");
         File.WriteAllText(Path.Combine(rootUri, "sub", "doc.cvl"), "int Main() { return 0; }");
         var documentPath = Path.Combine(rootUri, "sub", "doc.cvl");
+        var coreUri = DocumentUri.Create(documentPath);
 
         await _session.Client.InitializeWithAsync(new InitializeRequestParams
         {
@@ -288,13 +292,15 @@ public class TextDocumentSyncHandlerTests : IDisposable
         var store = _session.Server.Store;
 
         await _session.Client.NotifyDidOpenAsync(new Uri(documentPath), "cvolo", 1, "t").WithTimeout("didOpen");
-        await _session.Client.WaitUntilAsync(() => _logger.Has("Warning", "No .cvlproj found"), "no-project warning");
+        await _session.Client.WaitUntilAsync(() => store.TryGet(coreUri, out var state) && state.Text == "t", "rootUri loose didOpen applied");
 
-        Assert.Empty(store.OpenUris);
+        Assert.True(store.TryGet(coreUri, out var opened));
+        Assert.Equal("t", opened!.Text);
+        Assert.False(_logger.Has("Warning", "No .cvlproj found"));
     }
 
     [Fact]
-    public async Task DocumentOutsideAllWorkspaceFolders_FallsBackToRootPath_WhenRootUriAbsent()
+    public async Task DocumentOutsideAllWorkspaceFolders_FallsBackToRootPathLooseWorkspace_WhenRootUriAbsent()
     {
         using var parent = TestWorkspace.CreateDirectory([]);
         var rootPath = Path.Combine(parent.DirectoryPath, "Inner");
@@ -304,6 +310,7 @@ public class TextDocumentSyncHandlerTests : IDisposable
         File.WriteAllText(Path.Combine(parent.DirectoryPath, "App.cvlproj"), "<Project><ItemGroup /></Project>\r\n");
         File.WriteAllText(Path.Combine(rootPath, "sub", "doc.cvl"), "int Main() { return 0; }");
         var documentPath = Path.Combine(rootPath, "sub", "doc.cvl");
+        var coreUri = DocumentUri.Create(documentPath);
 
         await _session.Client.InitializeWithAsync(new InitializeRequestParams
         {
@@ -313,9 +320,11 @@ public class TextDocumentSyncHandlerTests : IDisposable
         var store = _session.Server.Store;
 
         await _session.Client.NotifyDidOpenAsync(new Uri(documentPath), "cvolo", 1, "t").WithTimeout("didOpen");
-        await _session.Client.WaitUntilAsync(() => _logger.Has("Warning", "No .cvlproj found"), "no-project warning");
+        await _session.Client.WaitUntilAsync(() => store.TryGet(coreUri, out var state) && state.Text == "t", "rootPath loose didOpen applied");
 
-        Assert.Empty(store.OpenUris);
+        Assert.True(store.TryGet(coreUri, out var opened));
+        Assert.Equal("t", opened!.Text);
+        Assert.False(_logger.Has("Warning", "No .cvlproj found"));
     }
 
     [Fact]

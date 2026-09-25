@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <IsPackable>false</IsPackable>
@@ -8,17 +8,21 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
-    <PackageReference Include="xunit" />
-    <PackageReference Include="xunit.runner.visualstudio">
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-      <PrivateAssets>all</PrivateAssets>
-    </PackageReference>
     <PackageReference Include="coverlet.collector">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
+    <PackageReference Include="xunit.runner.visualstudio">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="xunit.v3" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+  
   <ItemGroup>
     <ProjectReference Include="..\..\src\Cvolo.LanguageServer\Cvolo.LanguageServer.csproj" />
     <ProjectReference Include="..\..\src\Cvolo.LanguageServer.Core\Cvolo.LanguageServer.Core.csproj" />
@@ -27,8 +31,7 @@
 
   <!-- Compile-time access to the pinned tooling for backend assertions. The
        runtime copy is delivered to the test output by CopyServerOutputForProcessTests. -->
-  <Import Project="$(MSBuildThisFileDirectory)..\..\artifacts\tooling-dir.props"
-          Condition="Exists('$(MSBuildThisFileDirectory)..\..\artifacts\tooling-dir.props')" />
+  <Import Project="$(MSBuildThisFileDirectory)..\..\artifacts\tooling-dir.props" Condition="Exists('$(MSBuildThisFileDirectory)..\..\artifacts\tooling-dir.props')" />
   <PropertyGroup>
     <CvoloManagedToolingAvailable Condition="'$(CvoloToolingDir)' != '' and Exists('$(CvoloToolingDir)/Cvolo.Compiler.Tooling.dll')">true</CvoloManagedToolingAvailable>
     <CvoloManagedToolingAvailable Condition="'$(CvoloManagedToolingAvailable)' == ''">false</CvoloManagedToolingAvailable>
@@ -36,7 +39,7 @@
   <ItemGroup Condition="'$(CvoloManagedToolingAvailable)' == 'true'">
     <Reference Include="Cvolo.Compiler.Tooling">
       <HintPath>$(CvoloToolingDir)/Cvolo.Compiler.Tooling.dll</HintPath>
-      <Private>false</Private>
+      <Private>true</Private>
     </Reference>
   </ItemGroup>
 
@@ -54,14 +57,43 @@
     runtimeconfig, deps, tooling bundle dlls) into the test output.
   -->
   <Target Name="CopyServerOutputForProcessTests" AfterTargets="Build">
-    <PropertyGroup>
-      <_ServerOutput>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\src\Cvolo.LanguageServer\bin\$(Configuration)\$(TargetFramework)\'))</_ServerOutput>
-    </PropertyGroup>
+    <MSBuild Projects="..\..\src\Cvolo.LanguageServer\Cvolo.LanguageServer.csproj"
+             Targets="GetTargetPath;GetCopyToOutputDirectoryItems"
+             Properties="Configuration=$(Configuration);TargetFramework=$(TargetFramework)"
+             BuildInParallel="true">
+      <Output TaskParameter="TargetOutputs" ItemName="_ServerOutputItems" />
+    </MSBuild>
     <ItemGroup>
-      <_ServerFiles Include="$(_ServerOutput)**\*" />
+      <_ServerTargetPath Include="@(_ServerOutputItems)" Condition="'%(Filename)' == 'cvolo-language-server' and '%(Extension)' == '.dll'" />
+      <_ServerDependency Include="@(_ServerOutputItems)" Condition="'%(Filename)' != 'cvolo-language-server' or '%(Extension)' != '.dll'" />
+      <_ServerOutputDirectory Include="@(_ServerTargetPath->'%(RootDir)%(Directory)')" />
     </ItemGroup>
-    <Copy SourceFiles="@(_ServerFiles)"
-          DestinationFiles="@(_ServerFiles->'$(OutputPath)%(RecursiveDir)%(Filename)%(Extension)')"
+    <PropertyGroup>
+      <_ServerOutput>@(_ServerOutputDirectory->'%(Identity)')</_ServerOutput>
+      <_ServerFileName>@(_ServerTargetPath->'%(Filename)')</_ServerFileName>
+    </PropertyGroup>
+    <Copy SourceFiles="@(_ServerTargetPath)"
+          DestinationFiles="@(_ServerTargetPath->'$(OutputPath)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_ServerDependency)"
+          DestinationFiles="@(_ServerDependency->'$(OutputPath)%(TargetPath)')"
+          SkipUnchangedFiles="true" />
+    <ItemGroup>
+      <_ServerGeneratedFiles Include="$(_ServerOutput)$(_ServerFileName).exe" Condition="Exists('$(_ServerOutput)$(_ServerFileName).exe')" />
+      <_ServerGeneratedFiles Include="$(_ServerOutput)$(_ServerFileName)" Condition="Exists('$(_ServerOutput)$(_ServerFileName)')" />
+      <_ServerGeneratedFiles Include="$(_ServerOutput)$(_ServerFileName).dll" Condition="Exists('$(_ServerOutput)$(_ServerFileName).dll')" />
+      <_ServerGeneratedFiles Include="$(_ServerOutput)$(_ServerFileName).deps.json" Condition="Exists('$(_ServerOutput)$(_ServerFileName).deps.json')" />
+      <_ServerGeneratedFiles Include="$(_ServerOutput)$(_ServerFileName).runtimeconfig.json" Condition="Exists('$(_ServerOutput)$(_ServerFileName).runtimeconfig.json')" />
+      <_ServerGeneratedFiles Include="$(_ServerOutput)$(_ServerFileName).pdb" Condition="Exists('$(_ServerOutput)$(_ServerFileName).pdb')" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_ServerGeneratedFiles)"
+          DestinationFolder="$(OutputPath)"
+          SkipUnchangedFiles="true" />
+    <ItemGroup Condition="'$(CvoloToolingDir)' != '' and Exists('$(CvoloToolingDir)')">
+      <_ToolingFiles Include="$(CvoloToolingDir)\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_ToolingFiles)"
+          DestinationFiles="@(_ToolingFiles->'$(OutputPath)%(RecursiveDir)%(Filename)%(Extension)')"
           SkipUnchangedFiles="true" />
   </Target>
 

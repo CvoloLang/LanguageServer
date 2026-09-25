@@ -58,22 +58,25 @@ public class ProjectDiscoveryTests : IDisposable
     }
 
     [Fact]
-    public void NoProjectAnywhere_IsNoProject()
+    public void NoProjectAnywhere_UsesWorkspaceBoundaryAsLooseWorkspace()
     {
         var result = ProjectDiscovery.FindProject(Path.Combine(_root, "main.cvl"), _root);
 
-        Assert.Equal(ProjectDiscoveryStatus.NoProject, result.Status);
+        Assert.Equal(ProjectDiscoveryStatus.LooseWorkspace, result.Status);
+        Assert.Equal(_root, result.ProjectDirectory);
     }
 
     [Fact]
-    public void WalkDoesNotCrossWorkspaceBoundary()
+    public void WalkDoesNotCrossWorkspaceBoundary_UsesBoundaryAsLooseWorkspace()
     {
         Write("App.cvlproj", "");
-        var nested = Path.Combine(_root, "src", "deep");
+        var boundary = Path.Combine(_root, "src");
+        var nested = Path.Combine(boundary, "deep");
         Directory.CreateDirectory(nested);
-        var result = ProjectDiscovery.FindProject(Path.Combine(nested, "main.cvl"), Path.Combine(_root, "src"));
+        var result = ProjectDiscovery.FindProject(Path.Combine(nested, "main.cvl"), boundary);
 
-        Assert.Equal(ProjectDiscoveryStatus.NoProject, result.Status);
+        Assert.Equal(ProjectDiscoveryStatus.LooseWorkspace, result.Status);
+        Assert.Equal(boundary, result.ProjectDirectory);
     }
 
     [Fact]

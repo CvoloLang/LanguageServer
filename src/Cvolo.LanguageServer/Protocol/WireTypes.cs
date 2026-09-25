@@ -141,6 +141,14 @@ internal sealed class InitializeRequestParams
     public Uri? RootUri { get; init; }
     public WorkspaceFolderItem[]? WorkspaceFolders { get; init; }
     public ClientCapabilitiesPayload? Capabilities { get; init; }
+    public CvoloInitializationOptions? InitializationOptions { get; init; }
+}
+
+/// <summary>Cvolo-specific initialize options supplied by editor clients.</summary>
+internal sealed class CvoloInitializationOptions
+{
+    /// <summary>Explicit .cvlib files or directories containing .cvlib files.</summary>
+    public string[]? LibraryPaths { get; init; }
 }
 
 /// <summary>

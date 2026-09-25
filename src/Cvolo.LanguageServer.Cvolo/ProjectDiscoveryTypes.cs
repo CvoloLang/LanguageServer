@@ -4,6 +4,7 @@ internal enum ProjectDiscoveryStatus
 {
     Found,
     NoProject,
+    LooseWorkspace,
     AmbiguousProject,
 }
 

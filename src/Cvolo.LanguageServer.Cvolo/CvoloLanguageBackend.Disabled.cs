@@ -6,7 +6,7 @@ using Cvolo.LanguageServer.Core.Logging;
 
 namespace Cvolo.LanguageServer.Cvolo;
 
-internal sealed class CvoloLanguageBackend(IReadOnlyList<string> workspaceFolders, string? fallbackRoot, ICoreLogger? logger = null) : ILanguageBackend
+internal sealed class CvoloLanguageBackend(IReadOnlyList<string> workspaceFolders, string? fallbackRoot, ICoreLogger? logger = null, IReadOnlyList<string>? libraryPaths = null) : ILanguageBackend
 {
     private readonly ICoreLogger _logger = logger ?? new NullCoreLogger();
 

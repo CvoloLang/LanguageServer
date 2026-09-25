@@ -49,6 +49,22 @@ internal sealed class SessionState
         }
     }
 
+    public IReadOnlyList<string> LibraryPaths
+    {
+        get
+        {
+            var paths = _initializeParams?.InitializationOptions?.LibraryPaths;
+            if (paths is null || paths.Length == 0)
+                return Array.Empty<string>();
+
+            return paths
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Select(path => path.Trim())
+                .Distinct(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal)
+                .ToArray();
+        }
+    }
+
     /// <summary>
     /// Workspace root from initialize: rootUri, falling back to rootPath.
     /// </summary>

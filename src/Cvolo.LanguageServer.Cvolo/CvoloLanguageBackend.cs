@@ -17,26 +17,26 @@ namespace Cvolo.LanguageServer.Cvolo;
 /// project) and the serialization gate that keeps snapshot advancement safe
 /// across concurrent requests for the same project.
 /// </summary>
-internal sealed class CvoloLanguageBackend(IReadOnlyList<string> workspaceFolders, string? fallbackRoot, ICoreLogger? logger = null) : ILanguageBackend
+internal sealed class CvoloLanguageBackend(
+    IReadOnlyList<string> workspaceFolders,
+    string? fallbackRoot,
+    ICoreLogger? logger = null,
+    IReadOnlyList<string>? libraryPaths = null) : ILanguageBackend
 {
     private readonly ICoreLogger _logger = logger ?? new NullCoreLogger();
     private readonly string? _fallbackRoot = fallbackRoot;
+    private readonly IReadOnlyList<string> _libraryPaths = libraryPaths ?? Array.Empty<string>();
     private readonly ConcurrentDictionary<string, CvoloProjectSession> _sessions = new();
 
     public BackendProject? OpenProject(DocumentUri document)
     {
         var boundary = SelectBoundary(document.LocalPath);
         ProjectDiscoveryResult discovery = ProjectDiscovery.FindProject(document.LocalPath, boundary);
-        if (discovery.Status == ProjectDiscoveryStatus.NoProject)
-        {
-            // A source outside any project directory (for example a standard-library file
-            // reached by go-to-definition) may still be part of an already-open project's
-            // document set; host it under that project so hover/definition work inside it.
-            if (TryFindOwningSession(document.LocalPath, out var owner))
-                return owner;
 
-            _logger.Write(CoreLogLevel.Warning, $"No .cvlproj found for '{document}'.");
-            return null;
+        if (discovery.Status is ProjectDiscoveryStatus.NoProject or ProjectDiscoveryStatus.LooseWorkspace
+            && TryFindOwningSession(document.LocalPath, out var owner))
+        {
+            return owner;
         }
 
         if (discovery.Status == ProjectDiscoveryStatus.AmbiguousProject)
@@ -45,13 +45,27 @@ internal sealed class CvoloLanguageBackend(IReadOnlyList<string> workspaceFolder
             return null;
         }
 
+        if (discovery.ProjectDirectory is null)
+        {
+            _logger.Write(CoreLogLevel.Warning, $"No filesystem root could be selected for '{document}'.");
+            return null;
+        }
+
+        var root = Path.GetFullPath(discovery.ProjectDirectory);
+        var sessionKey = discovery.Status == ProjectDiscoveryStatus.LooseWorkspace
+            ? "loose:" + root
+            : "project:" + root;
+
         try
         {
-            return _sessions.GetOrAdd(discovery.ProjectDirectory!, CreateSession);
+            return _sessions.GetOrAdd(
+                sessionKey,
+                _ => CreateSession(root, discovery.Status == ProjectDiscoveryStatus.LooseWorkspace));
         }
         catch (Exception ex)
         {
-            _logger.Write(CoreLogLevel.Error, $"Opening Cvolo project '{discovery.ProjectDirectory}' failed: {ex.Message}");
+            var mode = discovery.Status == ProjectDiscoveryStatus.LooseWorkspace ? "loose workspace" : "Cvolo project";
+            _logger.Write(CoreLogLevel.Error, $"Opening {mode} '{root}' failed: {ex.Message}");
             return null;
         }
     }
@@ -271,12 +285,19 @@ internal sealed class CvoloLanguageBackend(IReadOnlyList<string> workspaceFolder
         };
     }
 
-    private CvoloProjectSession CreateSession(string projectDirectory)
+    private CvoloProjectSession CreateSession(string semanticRoot, bool looseWorkspace)
     {
         // The workspace builds the same semantic universe as the compiler (project sources,
         // standard library, ProjectReference sources and package/.cvlib API units).
         var workspace = CvoloWorkspace.Create();
-        var project = workspace.OpenProject(projectDirectory);
+        var project = looseWorkspace
+            ? workspace.OpenProject(semanticRoot, _libraryPaths)
+            : workspace.OpenProject(semanticRoot);
+        _logger.Write(
+            CoreLogLevel.Info,
+            looseWorkspace
+                ? $"Opened loose Cvolo workspace '{semanticRoot}' with {_libraryPaths.Count} configured library path(s)."
+                : $"Opened Cvolo project '{semanticRoot}' from .cvlproj package/project metadata.");
         return new CvoloProjectSession(workspace, project);
     }
 

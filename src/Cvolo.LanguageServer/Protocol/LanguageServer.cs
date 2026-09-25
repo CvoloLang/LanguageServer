@@ -272,6 +272,7 @@ internal sealed class LanguageServer(
 
         IReadOnlyList<string> folders = _state.WorkspaceFolders;
         var root = _state.WorkspaceRoot;
+        IReadOnlyList<string> libraryPaths = _state.LibraryPaths;
 
         if (folders.Count > 0)
         {
@@ -286,8 +287,13 @@ internal sealed class LanguageServer(
             logger.Info("Document synchronization active; no workspace root (project discovery is unbounded).");
         }
 
+        if (libraryPaths.Count > 0)
+            logger.Info($"Cvolo explicit library paths: {libraryPaths.Count}.");
+
         CoreLoggerBridge coreLogger = new(logger);
-        return new DocumentStore(new CvoloLanguageBackend(folders, root, coreLogger), coreLogger);
+        return new DocumentStore(
+            new CvoloLanguageBackend(folders, root, coreLogger, libraryPaths),
+            coreLogger);
     }
 
     private void OnClientTerminated()

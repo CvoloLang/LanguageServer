@@ -103,14 +103,19 @@ public class CvoloLanguageBackendTests : IDisposable
     }
 
     [Fact]
-    public void NoProject_ReturnsNull_AndWarns()
+    public void NoProject_OpensLooseWorkspace()
     {
         using var workspace = TestWorkspace.CreateDirectory(["main.cvl"]);
         var noProjectBackend = new CvoloLanguageBackend([], null, _logger);
-        var result = noProjectBackend.OpenProject(DocumentUri.Create(Path.Combine(workspace.DirectoryPath, "main.cvl")));
+        var document = DocumentUri.Create(Path.Combine(workspace.DirectoryPath, "main.cvl"));
 
-        Assert.Null(result);
-        Assert.True(_logger.Has(CoreLogLevel.Warning, "No .cvlproj found"));
+        var result = noProjectBackend.OpenProject(document);
+
+        Assert.NotNull(result);
+        var session = (CvoloProjectSession)result!;
+        Assert.Equal(workspace.DirectoryPath, session.Project.ProjectPath);
+        Assert.True(noProjectBackend.TryResolveDocument(result, document, out _));
+        Assert.True(_logger.Has(CoreLogLevel.Info, "Opened loose Cvolo workspace"));
     }
 
     [Fact]
@@ -152,16 +157,20 @@ public class CvoloLanguageBackendTests : IDisposable
     }
 
     [Fact]
-    public void MostSpecificContainingWorkspaceFolder_IsTheBoundary()
+    public void MostSpecificContainingWorkspaceFolder_IsTheLooseWorkspaceBoundary()
     {
         using var workspace = TestWorkspace.CreateDirectory(["App.cvlproj", "nested/main.cvl"]);
         var nested = Path.Combine(workspace.DirectoryPath, "nested");
+        var document = DocumentUri.Create(Path.Combine(nested, "main.cvl"));
         var multiRoot = new CvoloLanguageBackend([workspace.DirectoryPath, nested], null, _logger);
 
-        var result = multiRoot.OpenProject(DocumentUri.Create(Path.Combine(nested, "main.cvl")));
+        var result = multiRoot.OpenProject(document);
 
-        Assert.Null(result);
-        Assert.True(_logger.Has(CoreLogLevel.Warning, "No .cvlproj found"));
+        Assert.NotNull(result);
+        var session = (CvoloProjectSession)result!;
+        Assert.Equal(nested, session.Project.ProjectPath);
+        Assert.True(multiRoot.TryResolveDocument(result, document, out _));
+        Assert.True(_logger.Has(CoreLogLevel.Info, "Opened loose Cvolo workspace"));
     }
 
     [Fact]
@@ -231,19 +240,23 @@ public class CvoloLanguageBackendTests : IDisposable
     }
 
     [Fact]
-    public void DocumentOutsideAllFolders_InsideFallbackRoot_IsBoundedByFallbackRoot()
+    public void DocumentOutsideAllFolders_InsideFallbackRoot_OpensLooseWorkspaceAtFallbackRoot()
     {
         using var parent = TestWorkspace.CreateDirectory(["Inner/sub/doc.cvl"]);
         File.WriteAllText(Path.Combine(parent.DirectoryPath, "App.cvlproj"), "<Project><ItemGroup /></Project>\r\n");
         var folderA = Path.Combine(parent.DirectoryPath, "FolderA");
         Directory.CreateDirectory(folderA);
         var fallbackRoot = Path.Combine(parent.DirectoryPath, "Inner");
+        var document = DocumentUri.Create(Path.Combine(fallbackRoot, "sub", "doc.cvl"));
 
         var bounded = new CvoloLanguageBackend([folderA], fallbackRoot, _logger);
-        var result = bounded.OpenProject(DocumentUri.Create(Path.Combine(fallbackRoot, "sub", "doc.cvl")));
+        var result = bounded.OpenProject(document);
 
-        Assert.Null(result);
-        Assert.True(_logger.Has(CoreLogLevel.Warning, "No .cvlproj found"));
+        Assert.NotNull(result);
+        var session = (CvoloProjectSession)result!;
+        Assert.Equal(fallbackRoot, session.Project.ProjectPath);
+        Assert.True(bounded.TryResolveDocument(result, document, out _));
+        Assert.True(_logger.Has(CoreLogLevel.Info, "Opened loose Cvolo workspace"));
     }
 
     [Fact]

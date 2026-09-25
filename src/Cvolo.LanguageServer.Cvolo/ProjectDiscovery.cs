@@ -1,10 +1,10 @@
 namespace Cvolo.LanguageServer.Cvolo;
 
 /// <summary>
-/// Locates the project that owns a document: the nearest directory walking
-/// upward from the document that contains exactly one *.cvlproj file. The
-/// walk never crosses the workspace boundary (most specific containing
-/// workspace folder, else rootUri, else no boundary).
+/// Locates the semantic root that owns a document. The nearest directory walking upward that
+/// contains exactly one *.cvlproj wins. When no project exists before the workspace boundary,
+/// the document is assigned to a loose workspace rooted at that boundary (or its own directory
+/// when discovery is unbounded).
 /// </summary>
 internal static class ProjectDiscovery
 {
@@ -31,13 +31,29 @@ internal static class ProjectDiscovery
 
             if (IsSameDirectory(directory, workspaceRoot))
             {
-                return new ProjectDiscoveryResult(ProjectDiscoveryStatus.NoProject, directory);
+                var looseRoot = ContainsNestedProject(directory)
+                    ? Path.GetDirectoryName(documentPath) ?? directory
+                    : directory;
+                return new ProjectDiscoveryResult(ProjectDiscoveryStatus.LooseWorkspace, looseRoot);
             }
 
             directory = Path.GetDirectoryName(directory);
         }
 
-        return new ProjectDiscoveryResult(ProjectDiscoveryStatus.NoProject, null);
+        return new ProjectDiscoveryResult(ProjectDiscoveryStatus.LooseWorkspace, Path.GetDirectoryName(documentPath));
+    }
+
+    private static bool ContainsNestedProject(string root)
+    {
+        try
+        {
+            return Directory.EnumerateFiles(root, "*.cvlproj", SearchOption.AllDirectories).Any();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Do not broaden a loose workspace across a tree we cannot inspect safely.
+            return true;
+        }
     }
 
     private static bool IsSameDirectory(string? left, string? right)
