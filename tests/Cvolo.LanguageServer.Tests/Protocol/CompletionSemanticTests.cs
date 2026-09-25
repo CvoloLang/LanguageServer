@@ -325,7 +325,7 @@ public class CompletionSemanticTests : IDisposable
         Assert.NotNull(result);
         CompletionItem item = Assert.Single(result!.Items, candidate => candidate.Label == "Add");
         Assert.Equal(InsertTextFormat.Plaintext, item.InsertTextFormat);
-        Assert.Equal("Add", item.TextEdit!.NewText);
+        Assert.Equal("Add()", item.TextEdit!.NewText);
     }
 
     [Fact]
