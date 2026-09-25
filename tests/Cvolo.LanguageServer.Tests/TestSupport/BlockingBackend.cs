@@ -293,6 +293,52 @@ internal sealed class BlockingBackend : ILanguageBackend
         }
     }
 
+    private int _codeFixHandleSeed;
+
+    public int CodeFixCalls;
+
+    public int ResolveCodeFixCalls;
+
+    public BackendCodeFixResult CannedCodeFixes { get; set; } = new([]);
+
+    public BackendCodeFixResolution CannedCodeFixResolution { get; set; } =
+        new BackendCodeFixFailure("no code fix configured");
+
+    public bool ThrowOnCodeFixes { get; set; }
+
+    public bool ThrowOnResolveCodeFix { get; set; }
+
+    public Func<BackendCodeFixHandle, BackendCodeFixResolution>? CodeFixResolveFactory { get; set; }
+
+    public BackendCodeFixHandle CreateCodeFixHandle()
+    {
+        return new FakeCodeFixHandle(Interlocked.Increment(ref _codeFixHandleSeed));
+    }
+
+    public BackendCodeFixResult GetCodeFixes(BackendSnapshot snapshot, BackendDocumentHandle document, TextSpan range)
+    {
+        Interlocked.Increment(ref CodeFixCalls);
+
+        if (ThrowOnCodeFixes)
+        {
+            throw new InvalidOperationException("simulated code action failure");
+        }
+
+        return CannedCodeFixes;
+    }
+
+    public BackendCodeFixResolution ResolveCodeFix(BackendSnapshot snapshot, BackendCodeFixHandle fix)
+    {
+        Interlocked.Increment(ref ResolveCodeFixCalls);
+
+        if (ThrowOnResolveCodeFix)
+        {
+            throw new InvalidOperationException("simulated code fix resolve failure");
+        }
+
+        return CodeFixResolveFactory is { } factory ? factory(fix) : CannedCodeFixResolution;
+    }
+
     private sealed class FakeProject : BackendProject
     {
         public long Generation;
@@ -311,6 +357,11 @@ internal sealed class BlockingBackend : ILanguageBackend
     }
 
     private sealed class FakeResolveHandle(int seed) : BackendCompletionResolveHandle
+    {
+        public int Seed { get; } = seed;
+    }
+
+    private sealed class FakeCodeFixHandle(int seed) : BackendCodeFixHandle
     {
         public int Seed { get; } = seed;
     }

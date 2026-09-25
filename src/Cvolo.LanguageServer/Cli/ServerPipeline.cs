@@ -102,6 +102,11 @@ internal static class ServerPipeline
             MethodNameTransform = m => m.Length == 0 ? m : char.ToLowerInvariant(m[0]) + m.Substring(1),
             UseSingleObjectParameterDeserialization = true,
         });
+        rpc.AddLocalRpcTarget(server.CodeActions, new JsonRpcTargetOptions
+        {
+            MethodNameTransform = m => m.Length == 0 ? m : char.ToLowerInvariant(m[0]) + m.Substring(1),
+            UseSingleObjectParameterDeserialization = true,
+        });
         rpc.StartListening();
 
         await Task.WhenAny(rpc.Completion, termination.Task).ConfigureAwait(false);

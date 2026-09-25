@@ -51,6 +51,7 @@ public class LifecycleTests
         Assert.Null(capabilities["typeDefinitionProvider"]);
         Assert.Null(capabilities["implementationProvider"]);
         Assert.Null(capabilities["semanticTokensProvider"]);
+        Assert.Null(capabilities["codeActionProvider"]);
         Assert.Null(capabilities["documentFormattingProvider"]);
 
         Assert.Equal("cvolo-language-server", raw["result"]!["serverInfo"]!["name"]!.Value<string>());

@@ -90,6 +90,7 @@ internal sealed class SessionState
         ComputeSemanticTokens(initializeParams);
         PrepareRenameSupported = initializeParams?.Capabilities?.TextDocument?.Rename?.PrepareSupport == true;
         DocumentChangesSupported = initializeParams?.Capabilities?.Workspace?.WorkspaceEdit?.DocumentChanges == true;
+        ComputeCodeActions(initializeParams);
         CompletionSnippetSupport = initializeParams?.Capabilities?.TextDocument?.Completion?.CompletionItem?.SnippetSupport == true;
         CompletionResolveSupportProperties = initializeParams?.Capabilities?.TextDocument?.Completion?.CompletionItem?.ResolveSupport?.Properties;
         CompletionDocumentationMarkdown = ComputeCompletionDocumentationMarkdown(initializeParams);
@@ -106,6 +107,39 @@ internal sealed class SessionState
 
     /// <summary>Whether WorkspaceEdit.documentChanges is supported.</summary>
     public bool DocumentChangesSupported { get; private set; }
+
+    /// <summary>
+    /// Whether the client advertises <c>codeAction.codeActionLiteralSupport</c>. Only then does the
+    /// server advertise a <c>codeActionProvider</c> (quickfix literals only, no command fallback).
+    /// </summary>
+    public bool CodeActionLiteralSupported { get; private set; }
+
+    /// <summary>The client-declared code action kind value set (open strings, captured verbatim).</summary>
+    public string[] CodeActionLiteralKinds { get; private set; } = [];
+
+    /// <summary>Whether the client accepts opaque <c>CodeAction.data</c>.</summary>
+    public bool CodeActionDataSupport { get; private set; }
+
+    /// <summary><c>codeAction.resolveSupport.properties</c> as sent by the client, or null when absent.</summary>
+    public string[]? CodeActionResolveSupportProperties { get; private set; }
+
+    /// <summary>
+    /// Whether lazy code action edit resolution is safe: literal support, data support, and the client
+    /// will resolve the <c>edit</c> property through <c>codeAction/resolve</c>.
+    /// </summary>
+    public bool LazyCodeActionEditResolveSupported { get; private set; }
+
+    private void ComputeCodeActions(InitializeRequestParams? initializeParams)
+    {
+        var capabilities = initializeParams?.Capabilities?.TextDocument?.CodeAction;
+        CodeActionLiteralSupported = capabilities?.CodeActionLiteralSupport is not null;
+        CodeActionLiteralKinds = capabilities?.CodeActionLiteralSupport?.CodeActionKind?.ValueSet ?? [];
+        CodeActionDataSupport = capabilities?.DataSupport == true;
+        CodeActionResolveSupportProperties = capabilities?.ResolveSupport?.Properties;
+        LazyCodeActionEditResolveSupported = CodeActionLiteralSupported
+            && CodeActionDataSupport
+            && CodeActionResolveSupportProperties?.Contains("edit", StringComparer.Ordinal) == true;
+    }
 
     private static readonly string[] CanonicalTokenTypes =
     [

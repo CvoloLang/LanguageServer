@@ -8,6 +8,7 @@ using Cvolo.LanguageServer.Core.Documents;
 using Cvolo.LanguageServer.Core.Logging;
 using System.Collections.Concurrent;
 using CoreTextSpan = Cvolo.LanguageServer.Core.Diagnostics.TextSpan;
+using ToolingTextSpan = Cvolo.Compiler.Tooling.TextSpan;
 
 namespace Cvolo.LanguageServer.Cvolo;
 
@@ -712,6 +713,88 @@ internal sealed class CvoloLanguageBackend(
         return new BackendSemanticTokenResult(mapped);
     }
 
+    public BackendCodeFixResult GetCodeFixes(BackendSnapshot snapshot, BackendDocumentHandle document, CoreTextSpan range)
+    {
+        var toolingSnapshot = ((ToolingBackendSnapshot)snapshot).Snapshot;
+        var documentId = ((CvoloDocumentHandle)document).DocumentId;
+
+        if (!toolingSnapshot.TryGetDocument(documentId, out DocumentSnapshot? toolingDocument))
+            return new BackendCodeFixResult([]);
+
+        IReadOnlyList<CodeFixInfo> fixes = toolingSnapshot.GetCodeFixes(
+            documentId,
+            new ToolingTextSpan(range.Start, range.Length));
+
+        var texts = new Dictionary<DocumentUri, string>();
+        DocumentUri documentUri = ToDocumentUri(toolingDocument.FilePath);
+        texts[documentUri] = toolingDocument.Text.ToString();
+
+        var infos = new List<BackendCodeFixInfo>(fixes.Count);
+        foreach (CodeFixInfo fix in fixes)
+        {
+            var diagnostics = new List<BackendDiagnostic>(fix.Diagnostics.Count);
+            foreach (Diagnostic diagnostic in fix.Diagnostics)
+            {
+                if (!TryMapLocation(toolingSnapshot, diagnostic.Location, texts, out BackendDiagnosticLocation? location))
+                {
+                    continue;
+                }
+
+                var related = new List<BackendDiagnosticLocation>(diagnostic.RelatedLocations.Count);
+                foreach (DiagnosticLocation relatedLocation in diagnostic.RelatedLocations)
+                {
+                    if (TryMapLocation(toolingSnapshot, relatedLocation, texts, out BackendDiagnosticLocation? mapped))
+                        related.Add(mapped);
+                }
+
+                diagnostics.Add(new BackendDiagnostic(
+                    MapSeverity(diagnostic.Severity),
+                    diagnostic.Id,
+                    diagnostic.Message,
+                    location,
+                    related));
+            }
+
+            if (diagnostics.Count == 0)
+                continue;
+
+            infos.Add(new BackendCodeFixInfo(
+                new CvoloCodeFixHandle(toolingSnapshot, fix.Id),
+                fix.Title,
+                diagnostics));
+        }
+
+        return new BackendCodeFixResult(infos);
+    }
+
+    public BackendCodeFixResolution ResolveCodeFix(BackendSnapshot snapshot, BackendCodeFixHandle fix)
+    {
+        var toolingSnapshot = ((ToolingBackendSnapshot)snapshot).Snapshot;
+        if (fix is not CvoloCodeFixHandle handle || !ReferenceEquals(handle.Snapshot, toolingSnapshot))
+            return new BackendCodeFixFailure("The code fix is not available for this project state.");
+
+        CodeFixResolution resolution = toolingSnapshot.ResolveCodeFix(handle.FixId);
+        if (resolution is not CodeFixSuccess success)
+            return new BackendCodeFixFailure(resolution is CodeFixFailure failure ? failure.Message : "The code fix could not be resolved.");
+
+        var texts = new Dictionary<DocumentUri, string>();
+        var edits = new List<BackendCodeFixEdit>(success.Edits.Count);
+        foreach (CodeFixEdit edit in success.Edits)
+        {
+            if (!toolingSnapshot.TryGetDocument(edit.Document, out DocumentSnapshot? editDocument))
+                return new BackendCodeFixFailure("The code fix targets a document outside the project state.");
+
+            DocumentUri uri = ToDocumentUri(editDocument.FilePath);
+            texts.TryAdd(uri, editDocument.Text.ToString());
+            edits.Add(new BackendCodeFixEdit(
+                uri,
+                new CoreTextSpan(edit.Span.Start, edit.Span.Length),
+                edit.NewText));
+        }
+
+        return new BackendCodeFixSuccess(texts, edits);
+    }
+
     private static BackendSemanticTokenModifiers MapTokenModifiers(SemanticTokenModifiers modifiers)
     {
         var result = BackendSemanticTokenModifiers.None;
@@ -920,4 +1003,15 @@ internal sealed class CvoloCompletionResolveHandle(ProjectSnapshot snapshot, Com
     public ProjectSnapshot Snapshot { get; } = snapshot;
 
     public CompletionItemId ItemId { get; } = itemId;
+}
+
+/// <summary>
+/// Opaque code-fix handle backed by the tooling's snapshot-scoped CodeFixId plus the tooling
+/// snapshot it was minted from, so a handle can never resolve against a different snapshot.
+/// </summary>
+internal sealed class CvoloCodeFixHandle(ProjectSnapshot snapshot, CodeFixId fixId) : BackendCodeFixHandle
+{
+    public ProjectSnapshot Snapshot { get; } = snapshot;
+
+    public CodeFixId FixId { get; } = fixId;
 }

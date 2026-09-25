@@ -1,4 +1,5 @@
 using Microsoft.VisualStudio.LanguageServer.Protocol;
+using Cvolo.LanguageServer.Diagnostics;
 
 namespace Cvolo.LanguageServer.Protocol;
 
@@ -35,6 +36,19 @@ internal sealed record ServerCapabilities
     public bool? DocumentSymbolProvider { get; init; }
 
     public SemanticTokensOptions? SemanticTokensProvider { get; init; }
+
+    public object? CodeActionProvider { get; init; }
+}
+
+/// <summary>
+/// LSP 3.17 <c>codeActionProvider</c> options. A local shape so the negotiated
+/// quickfix-only kind list and an explicit <c>resolveProvider</c> are always serialized.
+/// </summary>
+internal sealed record CodeActionOptions
+{
+    public string[]? CodeActionKinds { get; init; }
+
+    public bool ResolveProvider { get; init; }
 }
 
 /// <summary>
@@ -196,6 +210,32 @@ internal sealed class TextDocumentClientCapabilitiesPayload
     public CompletionClientCapabilitiesPayload? Completion { get; init; }
 
     public SignatureHelpClientCapabilitiesPayload? SignatureHelp { get; init; }
+
+    public CodeActionClientCapabilitiesPayload? CodeAction { get; init; }
+}
+
+internal sealed class CodeActionClientCapabilitiesPayload
+{
+    public CodeActionLiteralSupportPayload? CodeActionLiteralSupport { get; init; }
+
+    public bool? DataSupport { get; init; }
+
+    public CodeActionResolveSupportPayload? ResolveSupport { get; init; }
+}
+
+internal sealed class CodeActionLiteralSupportPayload
+{
+    public CodeActionKindPayload? CodeActionKind { get; init; }
+}
+
+internal sealed class CodeActionKindPayload
+{
+    public string[]? ValueSet { get; init; }
+}
+
+internal sealed class CodeActionResolveSupportPayload
+{
+    public string[]? Properties { get; init; }
 }
 
 internal sealed class RenameClientCapabilitiesPayload
@@ -351,4 +391,33 @@ internal sealed record WorkspaceEditPayload
 {
     public IReadOnlyDictionary<string, TextEditPayload[]>? Changes { get; init; }
     public TextDocumentEditPayload[]? DocumentChanges { get; init; }
+}
+
+/// <summary>
+/// Server-side shape of <c>textDocument/codeAction</c> params. <c>context.only</c> is carried as an
+/// open string set and <c>context.diagnostics</c> is accepted raw; neither is semantic authority.
+/// </summary>
+internal sealed class CodeActionParamsPayload
+{
+    public TextDocumentIdentifier? TextDocument { get; init; }
+    public Microsoft.VisualStudio.LanguageServer.Protocol.Range? Range { get; init; }
+    public CodeActionContextPayload? Context { get; init; }
+    public object? WorkDoneToken { get; init; }
+    public object? PartialResultToken { get; init; }
+}
+
+internal sealed class CodeActionContextPayload
+{
+    public object[]? Diagnostics { get; init; }
+    public string[]? Only { get; init; }
+    public int? TriggerKind { get; init; }
+}
+
+internal sealed record CodeActionPayload
+{
+    public string? Title { get; init; }
+    public string? Kind { get; init; }
+    public DiagnosticPayload[]? Diagnostics { get; init; }
+    public WorkspaceEditPayload? Edit { get; init; }
+    public object? Data { get; init; }
 }

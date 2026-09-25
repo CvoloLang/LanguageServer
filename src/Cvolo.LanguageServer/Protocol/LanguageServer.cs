@@ -19,6 +19,8 @@ internal sealed class LanguageServer(
     IClientProcessWatcher clientWatcher,
     Func<DocumentStore>? storeFactory = null) : IDisposable
 {
+    private const string QuickFixKind = "quickfix";
+
     private readonly SessionState _state = new();
     private readonly DiagnosticSink _diagnostics = new(logger);
     private readonly CancellationTokenSource _sessionCancellation = new();
@@ -33,6 +35,8 @@ internal sealed class LanguageServer(
     private SemanticTokensHandler? _semanticTokens;
     private ReferencesHandler? _references;
     private RenameHandler? _rename;
+    private CodeActionResolveStore? _codeActionResolveStore;
+    private CodeActionHandler? _codeActions;
     private SemanticTokensRefreshCoordinator? _refresh;
     private Timer? _deadClientExitTimer;
 
@@ -102,6 +106,17 @@ internal sealed class LanguageServer(
 
     /// <summary>textDocument/prepareRename and textDocument/rename handler.</summary>
     internal RenameHandler Rename => _rename ??= new RenameHandler(logger, () => Store, () => _state.DocumentChangesSupported);
+
+    /// <summary>Session-scoped, bounded store of lazy code-action resolve entries.</summary>
+    internal CodeActionResolveStore CodeActionResolveStore => _codeActionResolveStore ??= new CodeActionResolveStore();
+
+    /// <summary>textDocument/codeAction and codeAction/resolve handler.</summary>
+    internal CodeActionHandler CodeActions => _codeActions ??= new CodeActionHandler(
+        logger,
+        () => Store,
+        () => _state.DocumentChangesSupported,
+        () => _state.LazyCodeActionEditResolveSupported,
+        () => CodeActionResolveStore);
 
     /// <summary>
     /// Server-to-client semantic-token refresh coordinator.
@@ -197,6 +212,13 @@ internal sealed class LanguageServer(
                 ReferencesProvider = true,
                 RenameProvider = _state.PrepareRenameSupported ? (object)new RenameOptionsPayload(true) : true,
                 DocumentSymbolProvider = true,
+                CodeActionProvider = _state.CodeActionLiteralSupported
+                    ? new CodeActionOptions
+                    {
+                        CodeActionKinds = [QuickFixKind],
+                        ResolveProvider = _state.LazyCodeActionEditResolveSupported,
+                    }
+                    : null,
                 SemanticTokensProvider = _state.SemanticTokensEnabled
                     ? new SemanticTokensOptions
                     {
@@ -325,6 +347,7 @@ internal sealed class LanguageServer(
         DisarmClientWatcher();
         _refresh?.Stop();
         _sync?.Dispose();
+        _codeActionResolveStore?.Clear();
         _deadClientExitTimer?.Dispose();
         _deadClientExitTimer = null;
         _sessionCancellation.Dispose();

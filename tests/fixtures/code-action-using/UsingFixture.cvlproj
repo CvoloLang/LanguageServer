@@ -1,0 +1,6 @@
+<Project Sdk="Cvolo.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>UsingFixture</AssemblyName>
+  </PropertyGroup>
+</Project>

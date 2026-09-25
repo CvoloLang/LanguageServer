@@ -5,6 +5,7 @@ using Newtonsoft.Json.Linq;
 using Newtonsoft.Json.Serialization;
 using StreamJsonRpc;
 using Xunit.Sdk;
+using LspRange = Microsoft.VisualStudio.LanguageServer.Protocol.Range;
 
 namespace Cvolo.LanguageServer.Tests.TestSupport;
 
@@ -114,6 +115,23 @@ internal sealed class TestClient : IDisposable
             Methods.TextDocumentCompletionResolveName,
             item,
             cancellationToken);
+    }
+
+    public Task<CodeActionPayload[]?> CodeActionAsync(Uri uri, LspRange range, string[]? only = null)
+    {
+        return _rpc.InvokeWithParameterObjectAsync<CodeActionPayload[]?>(
+            "textDocument/codeAction",
+            new CodeActionParamsPayload
+            {
+                TextDocument = new TextDocumentIdentifier { Uri = uri },
+                Range = range,
+                Context = only is null ? null : new CodeActionContextPayload { Only = only },
+            });
+    }
+
+    public Task<Dictionary<string, object?>?> ResolveCodeActionAsync(Dictionary<string, object?> action)
+    {
+        return _rpc.InvokeWithParameterObjectAsync<Dictionary<string, object?>?>("codeAction/resolve", action);
     }
 
     public Task<SignatureHelp?> SignatureHelpAsync(Uri uri, int line, int character)

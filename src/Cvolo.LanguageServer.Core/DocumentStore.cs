@@ -453,6 +453,24 @@ internal sealed class DocumentStore(ILanguageBackend backend, ICoreLogger? logge
         return backend.GetSemanticTokens(context.CurrentProjectSnapshot, context.Document.BackendDocument);
     }
 
+    /// <summary>
+    /// Computes code fixes for the capture's project snapshot. Callers must verify the capture is
+    /// still current before and after the call.
+    /// </summary>
+    public BackendCodeFixResult GetCodeFixes(SemanticEditRequestContext context, TextSpan range)
+    {
+        return backend.GetCodeFixes(context.Semantic.CurrentProjectSnapshot, context.Semantic.Document.BackendDocument, range);
+    }
+
+    /// <summary>
+    /// Resolves a code fix handle against the capture's project snapshot. Callers must verify the
+    /// capture is still current before and after the call.
+    /// </summary>
+    public BackendCodeFixResolution ResolveCodeFix(SemanticEditRequestContext context, BackendCodeFixHandle fix)
+    {
+        return backend.ResolveCodeFix(context.Semantic.CurrentProjectSnapshot, fix);
+    }
+
     /// <summary>Ties together the published state and the backend tokens that produced it.</summary>
     private sealed record DocumentEntry(DocumentState State, BackendProject Project, BackendDocumentHandle Handle);
 }

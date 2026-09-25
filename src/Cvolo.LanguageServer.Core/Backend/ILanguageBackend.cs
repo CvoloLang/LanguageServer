@@ -157,4 +157,19 @@ internal interface ILanguageBackend
     /// </summary>
     BackendSemanticTokenResult GetSemanticTokens(BackendSnapshot snapshot, BackendDocumentHandle document)
         => new(Array.Empty<BackendSemanticToken>());
+
+    /// <summary>
+    /// Returns compiler-provided quick fix candidates for <paramref name="document"/> whose
+    /// diagnostics intersect <paramref name="range"/> (an absolute UTF-16 code-unit span over the
+    /// captured snapshot text), from the same immutable <paramref name="snapshot"/>.
+    /// </summary>
+    BackendCodeFixResult GetCodeFixes(BackendSnapshot snapshot, BackendDocumentHandle document, TextSpan range)
+        => new(Array.Empty<BackendCodeFixInfo>());
+
+    /// <summary>
+    /// Resolves the complete, all-or-nothing edit set of a code fix handle against the exact
+    /// snapshot it was minted from. A handle from a foreign snapshot yields a failure.
+    /// </summary>
+    BackendCodeFixResolution ResolveCodeFix(BackendSnapshot snapshot, BackendCodeFixHandle fix)
+        => new BackendCodeFixFailure("Code fixes are not supported by this language backend.");
 }
