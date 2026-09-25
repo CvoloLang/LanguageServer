@@ -58,9 +58,11 @@ internal sealed class CvoloLanguageBackend(
 
         try
         {
-            return _sessions.GetOrAdd(
+            CvoloProjectSession projectSession = _sessions.GetOrAdd(
                 sessionKey,
                 _ => CreateSession(root, discovery.Status == ProjectDiscoveryStatus.LooseWorkspace));
+
+            return CreatePackageSession(projectSession, document.LocalPath) ?? projectSession;
         }
         catch (Exception ex)
         {
@@ -68,6 +70,29 @@ internal sealed class CvoloLanguageBackend(
             _logger.Write(CoreLogLevel.Error, $"Opening {mode} '{root}' failed: {ex.Message}");
             return null;
         }
+    }
+
+    private CvoloProjectSession? CreatePackageSession(CvoloProjectSession owner, string filePath)
+    {
+        if (!owner.Project.InitialSnapshot.TryGetPackageSource(filePath, out PackageSourceDocument source))
+        {
+            return null;
+        }
+
+        var packageKey = "package:" + owner.Project.ProjectPath + ":" + source.PackageId + ":" + source.Version;
+
+        return _sessions.GetOrAdd(packageKey, _ => BuildPackageSession(owner, source));
+    }
+
+    private CvoloProjectSession BuildPackageSession(CvoloProjectSession owner, PackageSourceDocument source)
+    {
+        IReadOnlyList<PackageSourceDocument> sources = owner.Project.InitialSnapshot.GetPackageSources(source.PackageId, source.Version);
+        var workspace = CvoloWorkspace.Create();
+        var project = workspace.OpenPackageSource(owner.Project.ProjectPath, sources);
+        _logger.Write(
+            CoreLogLevel.Info,
+            $"Opened package source session '{source.PackageId}@{source.Version}' for '{owner.Project.ProjectPath}'.");
+        return new CvoloProjectSession(workspace, project);
     }
 
     private bool TryFindOwningSession(string path, out CvoloProjectSession session)
@@ -523,13 +548,14 @@ internal sealed class CvoloLanguageBackend(
         }
 
         IReadOnlyList<SymbolDefinition> definitions = toolingSnapshot.GetDefinitions(handle.SymbolId);
-        if (definitions.Count == 0)
+        IReadOnlyList<PackageSourceDefinition> packageDefinitions = toolingSnapshot.GetPackageSourceDefinitions(handle.SymbolId);
+        if (definitions.Count == 0 && packageDefinitions.Count == 0)
         {
             return EmptyDefinitions;
         }
 
         var texts = new Dictionary<DocumentUri, string>();
-        var targets = new List<BackendDefinitionTarget>(definitions.Count);
+        var targets = new List<BackendDefinitionTarget>(definitions.Count + packageDefinitions.Count);
         foreach (SymbolDefinition definition in definitions)
         {
             if (!toolingSnapshot.TryGetDocument(definition.DocumentId, out DocumentSnapshot? targetDocument))
@@ -539,6 +565,16 @@ internal sealed class CvoloLanguageBackend(
 
             DocumentUri uri = ToDocumentUri(targetDocument.FilePath);
             texts.TryAdd(uri, targetDocument.Text.ToString());
+            targets.Add(new BackendDefinitionTarget(
+                uri,
+                new CoreTextSpan(definition.Range.Start, definition.Range.Length),
+                new CoreTextSpan(definition.SelectionSpan.Start, definition.SelectionSpan.Length)));
+        }
+
+        foreach (PackageSourceDefinition definition in packageDefinitions)
+        {
+            DocumentUri uri = ToDocumentUri(definition.FilePath);
+            texts.TryAdd(uri, definition.Source);
             targets.Add(new BackendDefinitionTarget(
                 uri,
                 new CoreTextSpan(definition.Range.Start, definition.Range.Length),
