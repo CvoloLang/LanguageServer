@@ -132,8 +132,7 @@ internal sealed class CvoloLanguageBackend(
 
         lock (session.Gate)
         {
-            ProjectSnapshot next = session.Current.WithDocument(document.DocumentId, SourceText.From(text));
-            session.Advance(next);
+            ProjectSnapshot next = AdvanceSnapshot(session, document.DocumentId, text);
             return new ToolingBackendSnapshot(next, session.Generation);
         }
     }
@@ -149,9 +148,35 @@ internal sealed class CvoloLanguageBackend(
             // the client, external tools). Read it at close so removing the editor overlay never
             // resurrects the project text captured when the language server first opened it.
             SourceText baseline = session.ReadDiskBaseline(document.DocumentId);
-            ProjectSnapshot next = session.Current.WithDocument(document.DocumentId, baseline);
-            session.Advance(next);
+            ProjectSnapshot next = AdvanceSnapshot(session, document.DocumentId, baseline.ToString());
             return new ToolingBackendSnapshot(next, session.Generation);
+        }
+    }
+
+    private ProjectSnapshot AdvanceSnapshot(CvoloProjectSession session, DocumentId documentId, string text)
+    {
+        if (!session.Current.TryGetDocument(documentId, out DocumentSnapshot? edited))
+            return session.Current;
+
+        var comparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+        var overrides = new Dictionary<string, string>(comparer);
+        foreach (DocumentSnapshot document in session.Current.Documents.Values)
+            overrides[document.FilePath] = document.Text.ToString();
+        overrides[edited.FilePath] = text;
+
+        try
+        {
+            CvoloProject advanced = session.Project.Advance(overrides);
+            session.SetProject(advanced);
+            session.Advance(advanced.InitialSnapshot);
+            return advanced.InitialSnapshot;
+        }
+        catch (Exception ex)
+        {
+            _logger.Write(CoreLogLevel.Debug, $"Library closure advance skipped for '{edited.FilePath}': {ex.Message}");
+            ProjectSnapshot next = session.Current.WithDocument(documentId, SourceText.From(text));
+            session.Advance(next);
+            return next;
         }
     }
 
@@ -907,20 +932,28 @@ internal sealed class CvoloLanguageBackend(
 /// and the adapter-owned generation that identifies snapshot advancements. The
 /// generation is language-server-internal and never added to the tooling.
 /// </summary>
-internal sealed class CvoloProjectSession(CvoloWorkspace workspace, CvoloProject project) : BackendProject
+internal sealed class CvoloProjectSession : BackendProject
 {
-    public CvoloWorkspace Workspace { get; } = workspace;
+    private readonly Dictionary<DocumentId, SourceText> _diskBaselines;
 
-    public CvoloProject Project { get; } = project;
+    public CvoloProjectSession(CvoloWorkspace workspace, CvoloProject project)
+    {
+        Workspace = workspace;
+        Project = project;
+        Current = project.InitialSnapshot;
+        _diskBaselines = project.InitialSnapshot.Documents
+            .ToDictionary(pair => pair.Key, pair => pair.Value.Text);
+    }
+
+    public CvoloWorkspace Workspace { get; }
+
+    public CvoloProject Project { get; private set; }
 
     public ProjectSnapshot Baseline => Project.InitialSnapshot;
 
-    public ProjectSnapshot Current { get; private set; } = project.InitialSnapshot;
+    public ProjectSnapshot Current { get; private set; }
 
     public long Generation { get; private set; }
-
-    private readonly Dictionary<DocumentId, SourceText> _diskBaselines = project.InitialSnapshot.Documents
-        .ToDictionary(pair => pair.Key, pair => pair.Value.Text);
 
     public SourceText ReadDiskBaseline(DocumentId documentId)
     {
@@ -949,6 +982,11 @@ internal sealed class CvoloProjectSession(CvoloWorkspace workspace, CvoloProject
     public void SetDiskBaseline(DocumentId documentId, SourceText source)
     {
         _diskBaselines[documentId] = source;
+    }
+
+    public void SetProject(CvoloProject project)
+    {
+        Project = project;
     }
 
     /// <summary>

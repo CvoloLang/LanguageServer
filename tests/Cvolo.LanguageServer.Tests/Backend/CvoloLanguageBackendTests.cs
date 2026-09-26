@@ -122,7 +122,7 @@ public class CvoloLanguageBackendTests : IDisposable
     public void SourceOutsideProjectDirectory_IsHostedByOwningProject()
     {
         var project = _backend.OpenProject(MainUri)!;
-        var stdPath = Path.Combine(AppContext.BaseDirectory, "libraries", "System", "Attributes", "ErrorAttribute.cvl");
+        var stdPath = Path.Combine(AppContext.BaseDirectory, "libraries", "Core", "System", "Attributes", "ErrorAttribute.cvl");
         Assert.True(File.Exists(stdPath), "the test host must ship the standard library");
         var stdUri = DocumentUri.Create(stdPath);
 

@@ -1,0 +1,131 @@
+using Cvolo.Compiler.Tooling;
+using Cvolo.LanguageServer.Core.Documents;
+using Cvolo.LanguageServer.Core.Logging;
+using Cvolo.LanguageServer.Cvolo;
+using Cvolo.LanguageServer.Tests.TestSupport;
+using Xunit;
+
+namespace Cvolo.LanguageServer.Tests.Backend;
+
+public class CvoloLibraryClosureTests : IDisposable
+{
+    private readonly TestWorkspace _workspace;
+    private readonly RecordingCoreLogger _logger;
+    private readonly CvoloLanguageBackend _backend;
+
+    public CvoloLibraryClosureTests()
+    {
+        _workspace = TestWorkspace.CreateProject(["main.cvl"], _ => "int Main() { return 0; }\n");
+        _logger = new RecordingCoreLogger();
+        _backend = new CvoloLanguageBackend([_workspace.DirectoryPath], null, _logger);
+    }
+
+    public void Dispose()
+    {
+        _workspace.Dispose();
+    }
+
+    private DocumentUri MainUri => DocumentUri.Create(_workspace.PathOf("main.cvl"));
+
+    private static bool IsConsole(DocumentSnapshot document) =>
+        document.FilePath.EndsWith(Path.Combine("Std", "System", "Console.cvl"), StringComparison.OrdinalIgnoreCase);
+
+    [Fact]
+    public void DidChangeAddingUsing_AdvancesClosureWithoutRestart()
+    {
+        var project = _backend.OpenProject(MainUri)!;
+        var handle = _backend.Resolve(project, MainUri);
+        const string edited = "using System;\nint Main() { Console.WriteLine(\"hi\"); return 0; }\n";
+
+        var snapshot = (ToolingBackendSnapshot)_backend.UpdateDocument(project, handle, edited);
+
+        Assert.Contains(snapshot.Snapshot.Documents.Values, IsConsole);
+        Assert.Equal(edited, snapshot.Snapshot.GetDocument(((CvoloDocumentHandle)handle).DocumentId).Text.ToString());
+        Assert.Equal("int Main() { return 0; }\n", File.ReadAllText(MainUri.LocalPath));
+
+        var consolePath = snapshot.Snapshot.Documents.Values.Single(IsConsole).FilePath;
+        Assert.True(_backend.TryResolveDocument(project, DocumentUri.Create(consolePath), out _));
+    }
+
+    [Fact]
+    public void DidChangeRemovingUsing_AdvancesClosureCoherently()
+    {
+        var project = _backend.OpenProject(MainUri)!;
+        var handle = _backend.Resolve(project, MainUri);
+        _backend.UpdateDocument(project, handle, "using System;\nint Main() { Console.WriteLine(\"hi\"); return 0; }\n");
+
+        var snapshot = (ToolingBackendSnapshot)_backend.UpdateDocument(project, handle, "int Main() { return 0; }\n");
+
+        Assert.DoesNotContain(snapshot.Snapshot.Documents.Values, IsConsole);
+    }
+
+    [Fact]
+    public void DefinitionIntoSelectedStd_UsesRealSourceFileUri()
+    {
+        var project = _backend.OpenProject(MainUri)!;
+        var handle = _backend.Resolve(project, MainUri);
+        const string edited = "using System;\nint Main() { Console.WriteLine(\"hi\"); return 0; }\n";
+        _backend.UpdateDocument(project, handle, edited);
+        var snapshot = (ToolingBackendSnapshot)_backend.CaptureCurrentSnapshot(project);
+
+        var symbol = snapshot.Snapshot
+            .GetDocument(((CvoloDocumentHandle)handle).DocumentId)
+            .GetSymbolAtPosition(edited.IndexOf("WriteLine", StringComparison.Ordinal));
+
+        Assert.NotNull(symbol);
+        var definitions = snapshot.Snapshot.GetDefinitions(symbol!.SymbolId);
+        Assert.NotEmpty(definitions);
+        var document = snapshot.Snapshot.GetDocument(definitions[0].DocumentId);
+        Assert.True(IsConsole(document));
+        Assert.True(File.Exists(document.FilePath));
+    }
+
+    [Fact]
+    public void CoreOnlyProject_HasNoFalseDiagnostics()
+    {
+        var project = _backend.OpenProject(MainUri)!;
+        var handle = _backend.Resolve(project, MainUri);
+        var snapshot = (ToolingBackendSnapshot)_backend.CaptureCurrentSnapshot(project);
+
+        var diagnostics = snapshot.Snapshot
+            .GetDocument(((CvoloDocumentHandle)handle).DocumentId)
+            .GetDiagnostics();
+
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void ClosureChangingEdit_AdvancesGeneration_AndInvalidatesOldSnapshot()
+    {
+        var project = _backend.OpenProject(MainUri)!;
+        var handle = _backend.Resolve(project, MainUri);
+        var before = (ToolingBackendSnapshot)_backend.CaptureCurrentSnapshot(project);
+
+        var after = (ToolingBackendSnapshot)_backend.UpdateDocument(
+            project,
+            handle,
+            "using System;\nint Main() { Console.WriteLine(\"hi\"); return 0; }\n");
+
+        Assert.False(_backend.IsCurrentSnapshot(project, before));
+        Assert.True(_backend.IsCurrentSnapshot(project, after));
+    }
+
+    [Fact]
+    public void StdSourceWorkspace_DoesNotDuplicateBundledStd()
+    {
+        var stdPath = Path.Combine(AppContext.BaseDirectory, "libraries", "Std", "System", "Math", "Constants.cvl");
+        Assert.True(File.Exists(stdPath), "the test host must ship the standard library");
+        var stdUri = DocumentUri.Create(stdPath);
+        var backend = new CvoloLanguageBackend([Path.GetDirectoryName(stdPath)!], null, _logger);
+
+        var project = backend.OpenProject(stdUri);
+
+        Assert.NotNull(project);
+        Assert.True(backend.TryResolveDocument(project!, stdUri, out var handle));
+        var snapshot = (ToolingBackendSnapshot)backend.CaptureCurrentSnapshot(project!);
+        var document = snapshot.Snapshot.GetDocument(((CvoloDocumentHandle)handle).DocumentId);
+        Assert.DoesNotContain(
+            document.GetDiagnostics(),
+            diagnostic => diagnostic.Message.Contains("Duplicate definition", StringComparison.Ordinal));
+    }
+}
