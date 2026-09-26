@@ -219,7 +219,7 @@ internal sealed class SemanticTokensHandler(
         BackendSymbolKind.Field or BackendSymbolKind.Property => ["property", "variable"],
         BackendSymbolKind.EnumMember => ["enumMember", "property", "variable"],
         BackendSymbolKind.Function => ["function", "method"],
-        BackendSymbolKind.Method or BackendSymbolKind.ExtensionMethod or BackendSymbolKind.Constructor => ["method", "function"],
+        BackendSymbolKind.Method or BackendSymbolKind.ExtensionMethod or BackendSymbolKind.AssociatedFunction or BackendSymbolKind.Constructor => ["method", "function"],
         BackendSymbolKind.Operator => ["operator", "method", "function"],
         BackendSymbolKind.Keyword => ["keyword"],
         _ => [],

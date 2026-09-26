@@ -33,6 +33,7 @@ internal enum BackendSymbolKind
     Function,
     Method,
     ExtensionMethod,
+    AssociatedFunction,
     Constructor,
     Destructor,
     Field,

@@ -187,6 +187,7 @@ internal sealed class DocumentSymbolHandler(ILspLogger logger, Func<DocumentStor
             BackendSymbolKind.Function => SymbolKind.Function,
             BackendSymbolKind.Method => SymbolKind.Method,
             BackendSymbolKind.ExtensionMethod => SymbolKind.Method,
+            BackendSymbolKind.AssociatedFunction => SymbolKind.Method,
             BackendSymbolKind.Constructor => SymbolKind.Constructor,
             BackendSymbolKind.Destructor => SymbolKind.Method,
             BackendSymbolKind.Field => SymbolKind.Field,

@@ -924,6 +924,7 @@ internal sealed class CvoloLanguageBackend(
             ToolingSymbolKind.Function => BackendSymbolKind.Function,
             ToolingSymbolKind.Method => BackendSymbolKind.Method,
             ToolingSymbolKind.ExtensionMethod => BackendSymbolKind.ExtensionMethod,
+            ToolingSymbolKind.AssociatedFunction => BackendSymbolKind.AssociatedFunction,
             ToolingSymbolKind.Constructor => BackendSymbolKind.Constructor,
             ToolingSymbolKind.Destructor => BackendSymbolKind.Destructor,
             ToolingSymbolKind.Field => BackendSymbolKind.Field,
