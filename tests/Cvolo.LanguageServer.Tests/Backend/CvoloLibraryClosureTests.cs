@@ -128,4 +128,26 @@ public class CvoloLibraryClosureTests : IDisposable
             document.GetDiagnostics(),
             diagnostic => diagnostic.Message.Contains("Duplicate definition", StringComparison.Ordinal));
     }
+
+    [Fact]
+    public void NewLooseFileAddedAfterOpen_IsResolvedByRefreshingProject()
+    {
+        using var workspace = TestWorkspace.CreateDirectory();
+        var memoryDirectory = Path.Combine(workspace.DirectoryPath, "Memory");
+        Directory.CreateDirectory(memoryDirectory);
+        var allocatorPath = Path.Combine(memoryDirectory, "Allocator.cvl");
+        File.WriteAllText(allocatorPath, "int Allocate() { return 0; }\n");
+        var backend = new CvoloLanguageBackend([workspace.DirectoryPath], null, _logger);
+        var allocatorUri = DocumentUri.Create(allocatorPath);
+        var project = backend.OpenProject(allocatorUri)!;
+        Assert.True(backend.TryResolveDocument(project, allocatorUri, out _));
+
+        var layoutPath = Path.Combine(memoryDirectory, "Layout.cvl");
+        File.WriteAllText(layoutPath, "int Layout() { return 1; }\n");
+        var layoutUri = DocumentUri.Create(layoutPath);
+
+        Assert.True(backend.TryResolveDocument(project, layoutUri, out var handle));
+        var snapshot = (ToolingBackendSnapshot)backend.CaptureCurrentSnapshot(project);
+        Assert.Equal("int Layout() { return 1; }\n", snapshot.Snapshot.GetDocument(((CvoloDocumentHandle)handle).DocumentId).Text.ToString());
+    }
 }

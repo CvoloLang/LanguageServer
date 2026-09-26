@@ -120,9 +120,57 @@ internal sealed class CvoloLanguageBackend(
             return true;
         }
 
+        if (IsUnderProject(session.Project.ProjectPath, document.LocalPath)
+            && TryRefreshSession(session)
+            && session.Project.TryGetDocumentId(document.LocalPath, out documentId))
+        {
+            handle = new CvoloDocumentHandle(documentId);
+            return true;
+        }
+
         _logger.Write(CoreLogLevel.Error, $"Document '{document}' is not part of project '{session.Project.ProjectPath}'.");
         handle = null!;
         return false;
+    }
+
+    private bool TryRefreshSession(CvoloProjectSession session)
+    {
+        lock (session.Gate)
+        {
+            var comparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+            var overrides = new Dictionary<string, string>(comparer);
+            foreach (DocumentSnapshot document in session.Current.Documents.Values)
+                overrides[document.FilePath] = document.Text.ToString();
+
+            try
+            {
+                CvoloProject advanced = session.Project.Advance(overrides);
+                session.SetProject(advanced);
+                session.Advance(advanced.InitialSnapshot);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.Write(CoreLogLevel.Debug, $"Project refresh for a newly added file failed: {ex.Message}");
+                return false;
+            }
+        }
+    }
+
+    private static bool IsUnderProject(string projectPath, string filePath)
+    {
+        var root = Directory.Exists(projectPath) ? projectPath : Path.GetDirectoryName(projectPath);
+        if (string.IsNullOrEmpty(root))
+            return false;
+
+        var fullRoot = Path.GetFullPath(root);
+        var fullFile = Path.GetFullPath(filePath);
+        var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        if (fullFile.Equals(fullRoot, comparison))
+            return true;
+
+        var prefix = fullRoot.EndsWith(Path.DirectorySeparatorChar) ? fullRoot : fullRoot + Path.DirectorySeparatorChar;
+        return fullFile.StartsWith(prefix, comparison);
     }
 
     public BackendSnapshot UpdateDocument(BackendProject project, BackendDocumentHandle handle, string text)
