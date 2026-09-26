@@ -28,7 +28,7 @@ public class CvoloLibraryClosureTests : IDisposable
     private DocumentUri MainUri => DocumentUri.Create(_workspace.PathOf("main.cvl"));
 
     private static bool IsConsole(DocumentSnapshot document) =>
-        document.FilePath.EndsWith(Path.Combine("Std", "System", "Console.cvl"), StringComparison.OrdinalIgnoreCase);
+        document.FilePath.EndsWith(Path.Combine("System", "Console.cvl"), StringComparison.OrdinalIgnoreCase);
 
     [Fact]
     public void DidChangeAddingUsing_AdvancesClosureWithoutRestart()
@@ -113,7 +113,7 @@ public class CvoloLibraryClosureTests : IDisposable
     [Fact]
     public void StdSourceWorkspace_DoesNotDuplicateBundledStd()
     {
-        var stdPath = Path.Combine(AppContext.BaseDirectory, "libraries", "Std", "System", "Math", "Constants.cvl");
+        var stdPath = Path.Combine(AppContext.BaseDirectory, "libraries", "System", "Math", "Constants.cvl");
         Assert.True(File.Exists(stdPath), "the test host must ship the standard library");
         var stdUri = DocumentUri.Create(stdPath);
         var backend = new CvoloLanguageBackend([Path.GetDirectoryName(stdPath)!], null, _logger);
