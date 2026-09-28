@@ -460,12 +460,37 @@ public class EditorIntelligenceSemanticTests : IDisposable
         await OpenAsync();
 
         // A position that binds to no type contributes nothing rather than a host-layout guess.
-        var position = PositionOf(At("return value * 2;") + "return ".Length);
+        var position = PositionOf(At("return value * 2;") + "return value * ".Length);
         TypeLayoutResponse? layout = await _session.Client
             .TypeLayoutAsync(Uri, position.Line, position.Character)
             .WithTimeout("cvolo/typeLayout");
 
         Assert.Null(layout);
+    }
+
+    [Fact]
+    public async Task TypeLayout_ResolvesAKnownValueAndAnInferredLocalToTheirCompilerType()
+    {
+        await StartAsync();
+        await OpenAsync();
+
+        // A value the compiler knows by declaration, and one it only knows by inference, both answer
+        // with the type the compiler resolved. The editor never guesses from the declaration text.
+        var v = PositionOf(At("val Vec v = Vec") + "val Vec ".Length);
+        TypeLayoutResponse? vec = await EventuallyAsync(
+            () => _session.Client.TypeLayoutAsync(Uri, v.Line, v.Character),
+            answer => answer is not null && answer.TypeDisplay == "Vec",
+            "cvolo/typeLayout at a known value");
+        Assert.NotNull(vec);
+        Assert.Equal(new[] { "X", "Y" }, vec!.Members.Select(member => member.Name));
+
+        var b = PositionOf(At("val b = 3;") + "val ".Length);
+        TypeLayoutResponse? inferred = await EventuallyAsync(
+            () => _session.Client.TypeLayoutAsync(Uri, b.Line, b.Character),
+            answer => answer is not null && answer.TypeDisplay == "int",
+            "cvolo/typeLayout at an inferred local");
+        Assert.NotNull(inferred);
+        Assert.Equal(4, inferred!.Size);
     }
 
     [Fact]
