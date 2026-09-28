@@ -1,5 +1,6 @@
 using Cvolo.Compiler.Tooling;
 using Cvolo.LanguageServer.Core.Backend;
+using Cvolo.LanguageServer.Core.Documents;
 using Cvolo.LanguageServer.Core.Logging;
 using CoreTextSpan = Cvolo.LanguageServer.Core.Diagnostics.TextSpan;
 using ToolingTextSpan = Cvolo.Compiler.Tooling.TextSpan;
@@ -359,15 +360,22 @@ internal sealed partial class CvoloLanguageBackend
         RequirePosition(toolingDocument, position, "type-layout");
 
         TypeLayoutInspection? layout = toolingDocument.GetTypeLayoutAtPosition(position);
-        return layout is null ? null : MapTypeLayout(layout);
+        return layout is null ? null : MapTypeLayout((ToolingBackendSnapshot)snapshot, layout);
     }
 
-    private BackendTypeLayoutInspection? MapTypeLayout(TypeLayoutInspection layout)
+    private BackendTypeLayoutInspection? MapTypeLayout(BackendSnapshot snapshot, TypeLayoutInspection layout)
     {
+        var texts = new Dictionary<DocumentUri, string>();
         var members = new List<BackendTypeLayoutMember>(layout.Members.Count);
         foreach (TypeLayoutMemberInspection member in layout.Members)
         {
-            members.Add(new BackendTypeLayoutMember(member.Name, member.TypeDisplay, member.Offset, member.Size, member.Alignment));
+            members.Add(new BackendTypeLayoutMember(
+                member.Name,
+                member.TypeDisplay,
+                member.Offset,
+                member.Size,
+                member.Alignment,
+                MapMemberNavigation(snapshot, member.Navigation, texts)));
         }
 
         var padding = new List<BackendTypeLayoutPadding>(layout.Padding.Count);
@@ -421,6 +429,55 @@ internal sealed partial class CvoloLanguageBackend
             layout.ElementSize,
             layout.ElementAlignment,
             members,
-            padding);
+            padding,
+            MapDefinitionTarget(snapshot, layout.Definition, texts),
+            texts);
+    }
+
+    /// <summary>
+    /// Maps the compiler-resolved navigation facts of one member row. A target whose declaration is not
+    /// in the captured snapshot, or whose span cannot exist in that document's text, is dropped rather
+    /// than repaired, so the view never offers a link that opens nothing.
+    /// </summary>
+    private BackendTypeLayoutMemberNavigation? MapMemberNavigation(
+        BackendSnapshot snapshot,
+        TypeLayoutMemberNavigation? navigation,
+        Dictionary<DocumentUri, string> texts)
+    {
+        if (navigation is null || string.IsNullOrWhiteSpace(navigation.Signature))
+        {
+            return null;
+        }
+
+        return new BackendTypeLayoutMemberNavigation(
+            navigation.Signature,
+            navigation.Documentation,
+            MapDefinitionTarget(snapshot, navigation.Definition, texts),
+            MapDefinitionTarget(snapshot, navigation.TypeDefinition, texts),
+            MapDefinitionTarget(snapshot, navigation.NestedLayout, texts));
+    }
+
+    private BackendDefinitionTarget? MapDefinitionTarget(
+        BackendSnapshot snapshot,
+        SymbolDefinition? definition,
+        Dictionary<DocumentUri, string>? texts = null)
+    {
+        if (definition is null)
+        {
+            return null;
+        }
+
+        var toolingSnapshot = ((ToolingBackendSnapshot)snapshot).Snapshot;
+        if (!toolingSnapshot.TryGetDocument(definition.DocumentId, out DocumentSnapshot? document))
+        {
+            return null;
+        }
+
+        DocumentUri uri = ToDocumentUri(document.FilePath);
+        texts?.TryAdd(uri, document.Text.ToString());
+        return new BackendDefinitionTarget(
+            uri,
+            new CoreTextSpan(definition.Range.Start, definition.Range.Length),
+            new CoreTextSpan(definition.SelectionSpan.Start, definition.SelectionSpan.Length));
     }
 }

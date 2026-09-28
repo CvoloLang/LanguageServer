@@ -419,6 +419,41 @@ public class EditorIntelligenceSemanticTests : IDisposable
     }
 
     [Fact]
+    public async Task TypeLayout_CarriesTheCompilerResolvedNavigationForTheTypeAndItsFields()
+    {
+        await StartAsync();
+        await OpenAsync();
+
+        var position = PositionOf(At("public struct Header") + "public struct ".Length);
+        TypeLayoutResponse? layout = await EventuallyAsync(
+            () => _session.Client.TypeLayoutAsync(Uri, position.Line, position.Character),
+            answer => answer is not null
+                && answer.Definition is not null
+                && answer.Members.All(member => member.Navigation is not null),
+            "cvolo/typeLayout navigation");
+
+        // The type name navigates to its own declaration; the compiler resolved the target, so the
+        // client follows it without resolving any name itself.
+        Assert.NotNull(layout!.Definition);
+        var declared = PositionOf(At("public struct Header") + "public struct ".Length);
+        Assert.Equal(declared.Line, layout.Definition!.Range.Start.Line);
+        Assert.Equal(declared.Character, layout.Definition.Range.Start.Character);
+        Assert.Equal(declared.Character + "Header".Length, layout.Definition.Range.End.Character);
+
+        // Each field row navigates to the field's own declaration and carries its rendered signature.
+        var kind = layout.Members[0];
+        Assert.EndsWith(".Kind", kind.Navigation!.Signature);
+        var kindDeclared = PositionOf(At("public byte Kind;") + "public byte ".Length);
+        Assert.Equal(kindDeclared.Line, kind.Navigation.Definition!.Range.Start.Line);
+        Assert.Equal(kindDeclared.Character, kind.Navigation.Definition.Range.Start.Character);
+
+        // A primitive field type is not a source declaration, so there is no type target, and a byte
+        // is not something the compiler lays out as a type of its own, so there is no nested layout.
+        Assert.Null(kind.Navigation.TypeDefinition);
+        Assert.Null(kind.Navigation.NestedLayout);
+    }
+
+    [Fact]
     public async Task TypeLayout_AtAPositionThatBindsToNoType_IsNull()
     {
         await StartAsync();

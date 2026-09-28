@@ -557,7 +557,8 @@ internal sealed record TypeLayoutResponse(
     long? ElementSize,
     long? ElementAlignment,
     TypeLayoutMemberResponse[] Members,
-    TypeLayoutPaddingResponse[] Padding);
+    TypeLayoutPaddingResponse[] Padding,
+    Location? Definition = null);
 
 /// <summary>One member's placement inside its type. A union's members share one offset.</summary>
 internal sealed record TypeLayoutMemberResponse(
@@ -565,7 +566,19 @@ internal sealed record TypeLayoutMemberResponse(
     string TypeDisplay,
     long Offset,
     long Size,
-    long Alignment);
+    long Alignment,
+    TypeLayoutMemberNavigationResponse? Navigation = null);
+
+/// <summary>
+/// What one member row may navigate to, resolved by the compiler. Every location is a source
+/// declaration; a client follows the resolved target and never resolves a name itself (§19).
+/// </summary>
+internal sealed record TypeLayoutMemberNavigationResponse(
+    string Signature,
+    string? Documentation,
+    Location? Definition,
+    Location? TypeDefinition,
+    Location? NestedLayout);
 
 /// <summary>One run of bytes that carry no member, reported with the compiler's own classification.</summary>
 internal sealed record TypeLayoutPaddingResponse(long Offset, long Size, string Kind);

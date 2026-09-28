@@ -1,5 +1,6 @@
 using Cvolo.LanguageServer.Core;
 using Cvolo.LanguageServer.Core.Backend;
+using Cvolo.LanguageServer.Core.Diagnostics;
 using Cvolo.LanguageServer.Core.Documents;
 using Cvolo.LanguageServer.Protocol;
 using Cvolo.LanguageServer.Tests.TestSupport;
@@ -256,6 +257,106 @@ public class TypeLayoutHandlerTests : IDisposable
         }
 
         Assert.NotNull(await _session.Client.TypeLayoutAsync(Uri, 0, 7).WithTimeout("next cvolo/typeLayout"));
+    }
+
+    [Fact]
+    public async Task MemberNavigation_IsMappedToTheResolvedSourceLocations()
+    {
+        await StartAsync();
+        await OpenAsync();
+
+        // The compiler resolves every target; the handler only turns the compiler's character spans
+        // into line/character locations using the text captured with the layout. Nothing here is
+        // derived from the displayed table (§19, §39.3).
+        var document = DocumentUri.Create(_workspace.PathOf("a.cvl"));
+        _backend.CannedTypeLayout = new BackendTypeLayoutInspection(
+            "Point",
+            "x64-pc-windows-msvc",
+            8,
+            4,
+            8,
+            0,
+            null,
+            null,
+            null,
+            null,
+            [
+                new BackendTypeLayoutMember(
+                    "x",
+                    "int32",
+                    0,
+                    4,
+                    4,
+                    new BackendTypeLayoutMemberNavigation(
+                        "int32 Point.x",
+                        "How far the point lies from the origin.",
+                        new BackendDefinitionTarget(document, new TextSpan(20, 1), new TextSpan(20, 1)),
+                        null,
+                        null)),
+            ],
+            [],
+            Definition: new BackendDefinitionTarget(document, new TextSpan(7, 5), new TextSpan(7, 5)),
+            DocumentTexts: new Dictionary<DocumentUri, string> { [document] = Text });
+
+        JObject? layout = await _session.Client.TypeLayoutJsonAsync(Uri, 0, 7).WithTimeout("cvolo/typeLayout");
+
+        JToken definition = layout!["definition"]!;
+        Assert.Equal(Uri.AbsoluteUri, definition["uri"]!.Value<string>());
+        Assert.Equal(0, definition["range"]!["start"]!["line"]!.Value<int>());
+        Assert.Equal(7, definition["range"]!["start"]!["character"]!.Value<int>());
+        Assert.Equal(12, definition["range"]!["end"]!["character"]!.Value<int>());
+
+        JToken navigation = layout["members"]![0]!["navigation"]!;
+        Assert.Equal("int32 Point.x", navigation["signature"]!.Value<string>());
+        Assert.Equal("How far the point lies from the origin.", navigation["documentation"]!.Value<string>());
+
+        JToken field = navigation["definition"]!;
+        Assert.Equal(20, field["range"]!["start"]!["character"]!.Value<int>());
+        Assert.Null(navigation["typeDefinition"]);
+        Assert.Null(navigation["nestedLayout"]);
+    }
+
+    [Fact]
+    public async Task ANavigationTargetWhoseTextWasNotCaptured_IsDroppedNotClamped()
+    {
+        await StartAsync();
+        await OpenAsync();
+
+        // A target document the layout did not bring text for cannot be turned into a location, so the
+        // link is omitted rather than pointing at a guessed position.
+        var document = DocumentUri.Create(_workspace.PathOf("a.cvl"));
+        _backend.CannedTypeLayout = new BackendTypeLayoutInspection(
+            "Point",
+            "x64-pc-windows-msvc",
+            8,
+            4,
+            8,
+            0,
+            null,
+            null,
+            null,
+            null,
+            [
+                new BackendTypeLayoutMember(
+                    "x",
+                    "int32",
+                    0,
+                    4,
+                    4,
+                    new BackendTypeLayoutMemberNavigation(
+                        "int32 Point.x",
+                        null,
+                        new BackendDefinitionTarget(document, new TextSpan(20, 1), new TextSpan(20, 1)),
+                        null,
+                        null)),
+            ],
+            []);
+
+        JObject? layout = await _session.Client.TypeLayoutJsonAsync(Uri, 0, 7).WithTimeout("cvolo/typeLayout");
+
+        Assert.Null(layout!["definition"]);
+        Assert.Null(layout["members"]![0]!["navigation"]!["definition"]);
+        Assert.Equal("int32 Point.x", layout["members"]![0]!["navigation"]!["signature"]!.Value<string>());
     }
 
     [Fact]
