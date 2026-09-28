@@ -423,6 +423,107 @@ internal sealed partial class CvoloLanguageBackend
         return targets.Count == 0 ? null : new BackendDefinitionResult(texts, targets);
     }
 
+    public BackendTypeHierarchyResult? PrepareTypeHierarchy(BackendSnapshot snapshot, BackendDocumentHandle document, int position)
+    {
+        DocumentSnapshot toolingDocument = RequireEditorDocument(snapshot, document, "type-hierarchy");
+        RequirePosition(toolingDocument, position, "type-hierarchy");
+
+        ToolingHierarchyItem? item = toolingDocument.PrepareTypeHierarchy(position);
+        if (item is null)
+        {
+            return null;
+        }
+
+        var toolingSnapshot = ((ToolingBackendSnapshot)snapshot).Snapshot;
+        var texts = new Dictionary<DocumentUri, string>();
+        if (MapHierarchyItem(snapshot, item, toolingSnapshot, texts) is not { } mapped)
+        {
+            return null;
+        }
+
+        return new BackendTypeHierarchyResult(texts, [mapped]);
+    }
+
+    public BackendTypeHierarchyResult GetSupertypes(BackendSnapshot snapshot, DocumentUri document, string key)
+    {
+        return HierarchyByKey(snapshot, document, key, supertypes: true);
+    }
+
+    public BackendTypeHierarchyResult GetSubtypes(BackendSnapshot snapshot, DocumentUri document, string key)
+    {
+        return HierarchyByKey(snapshot, document, key, supertypes: false);
+    }
+
+    private BackendTypeHierarchyResult HierarchyByKey(BackendSnapshot snapshot, DocumentUri document, string key, bool supertypes)
+    {
+        var toolingSnapshot = ((ToolingBackendSnapshot)snapshot).Snapshot;
+        if (FindDocument(toolingSnapshot, document) is not { } anchor)
+        {
+            return EmptyHierarchy;
+        }
+
+        // The follow-up request carries a server-owned contract name rather than a snapshot-scoped
+        // symbol handle, so it re-resolves against whatever snapshot is current (§42). A contract that
+        // was renamed or removed stops resolving instead of resurrecting a stale hierarchy.
+        ToolingHierarchyItem? item = toolingSnapshot.GetTypeHierarchyByKey(anchor.Id, key);
+        if (item is null)
+        {
+            return EmptyHierarchy;
+        }
+
+        IReadOnlyList<ToolingHierarchyItem> items = supertypes
+            ? toolingSnapshot.GetSupertypes(item.SymbolId)
+            : toolingSnapshot.GetSubtypes(item.SymbolId);
+        if (items.Count == 0)
+        {
+            return EmptyHierarchy;
+        }
+
+        var texts = new Dictionary<DocumentUri, string>();
+        var mapped = new List<BackendHierarchyItem>(items.Count);
+        foreach (ToolingHierarchyItem related in items)
+        {
+            if (MapHierarchyItem(snapshot, related, toolingSnapshot, texts) is { } mappedItem)
+            {
+                mapped.Add(mappedItem);
+            }
+        }
+
+        return new BackendTypeHierarchyResult(texts, mapped);
+    }
+
+    private BackendHierarchyItem? MapHierarchyItem(
+        BackendSnapshot snapshot,
+        ToolingHierarchyItem item,
+        ProjectSnapshot toolingSnapshot,
+        Dictionary<DocumentUri, string>? texts = null)
+    {
+        if (MapDefinitionTarget(snapshot, item.Definition, texts) is not { } target)
+        {
+            return null;
+        }
+
+        // The key is the contract name, which the server can resolve again on the next request.
+        return new BackendHierarchyItem(item.Name, MapSymbolKind(item.Kind), target.Document, target.Range, target.SelectionSpan, item.Name);
+    }
+
+    private static DocumentSnapshot? FindDocument(ProjectSnapshot toolingSnapshot, DocumentUri document)
+    {
+        foreach (DocumentSnapshot candidate in toolingSnapshot.Documents.Values)
+        {
+            if (ToDocumentUri(candidate.FilePath) == document)
+            {
+                return candidate;
+            }
+        }
+
+        return null;
+    }
+
+    private static readonly BackendTypeHierarchyResult EmptyHierarchy =
+        new(new Dictionary<DocumentUri, string>(), Array.Empty<BackendHierarchyItem>());
+
+
     private BackendTypeLayoutInspection? MapTypeLayout(BackendSnapshot snapshot, TypeLayoutInspection layout)
     {
         var texts = new Dictionary<DocumentUri, string>();

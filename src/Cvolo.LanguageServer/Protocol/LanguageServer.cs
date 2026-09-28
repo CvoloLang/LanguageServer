@@ -33,6 +33,9 @@ internal sealed class LanguageServer(
     private DefinitionHandler? _definition;
     private TypeDefinitionHandler? _typeDefinition;
     private ImplementationHandler? _implementation;
+    private PrepareTypeHierarchyHandler? _prepareTypeHierarchy;
+    private TypeHierarchySupertypesHandler? _typeHierarchySupertypes;
+    private TypeHierarchySubtypesHandler? _typeHierarchySubtypes;
     private DocumentSymbolHandler? _documentSymbols;
     private SemanticTokensHandler? _semanticTokens;
     private ReferencesHandler? _references;
@@ -104,6 +107,12 @@ internal sealed class LanguageServer(
     internal TypeDefinitionHandler TypeDefinition => _typeDefinition ??= new TypeDefinitionHandler(logger, () => Store);
 
     internal ImplementationHandler Implementation => _implementation ??= new ImplementationHandler(logger, () => Store);
+
+    internal PrepareTypeHierarchyHandler PrepareTypeHierarchy => _prepareTypeHierarchy ??= new PrepareTypeHierarchyHandler(logger, () => Store);
+
+    internal TypeHierarchySupertypesHandler TypeHierarchySupertypes => _typeHierarchySupertypes ??= new TypeHierarchySupertypesHandler(logger, () => Store);
+
+    internal TypeHierarchySubtypesHandler TypeHierarchySubtypes => _typeHierarchySubtypes ??= new TypeHierarchySubtypesHandler(logger, () => Store);
 
     /// <summary>
     /// textDocument/documentSymbol handler.
@@ -259,6 +268,7 @@ internal sealed class LanguageServer(
                 DefinitionProvider = true,
                 TypeDefinitionProvider = true,
                 ImplementationProvider = true,
+                TypeHierarchyProvider = true,
                 ReferencesProvider = true,
                 RenameProvider = _state.PrepareRenameSupported ? (object)new RenameOptionsPayload(true) : true,
                 DocumentSymbolProvider = true,

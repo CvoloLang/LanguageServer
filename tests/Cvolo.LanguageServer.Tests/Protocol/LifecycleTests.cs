@@ -43,6 +43,7 @@ public class LifecycleTests
         Assert.Equal(true, capabilities["definitionProvider"]?.Value<bool>());
         Assert.Equal(true, capabilities["typeDefinitionProvider"]?.Value<bool>());
         Assert.Equal(true, capabilities["implementationProvider"]?.Value<bool>());
+        Assert.Equal(true, capabilities["typeHierarchyProvider"]?.Value<bool>());
         Assert.Equal(true, capabilities["referencesProvider"]?.Value<bool>());
         Assert.Equal(true, capabilities["renameProvider"]?.Value<bool>());
         Assert.Equal(true, capabilities["documentSymbolProvider"]?.Value<bool>());

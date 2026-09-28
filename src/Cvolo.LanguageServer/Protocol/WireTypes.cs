@@ -33,6 +33,8 @@ internal sealed record ServerCapabilities
 
     public bool? ImplementationProvider { get; init; }
 
+    public bool? TypeHierarchyProvider { get; init; }
+
     public bool? ReferencesProvider { get; init; }
 
     public object? RenameProvider { get; init; }
@@ -595,4 +597,48 @@ internal sealed record TypeLayoutPaddingResponse(long Offset, long Size, string 
 internal sealed class DidChangeConfigurationParams
 {
     public Newtonsoft.Json.Linq.JObject? Settings { get; init; }
+}
+
+/// <summary>
+/// One contract in the declared type hierarchy sent to the client. The pinned protocol model has no
+/// <c>TypeHierarchyItem</c>, so the server defines the LSP 3.17 shape locally. <see cref="Data"/> is
+/// the server-owned re-resolution key (the contract name): follow-up requests echo it back so the
+/// hierarchy re-resolves against whatever snapshot is current rather than a stale symbol handle (§14,
+/// §15, §42).
+/// </summary>
+internal sealed class TypeHierarchyItemPayload
+{
+    public string? Name { get; init; }
+
+    public SymbolKind Kind { get; init; }
+
+    public string? Detail { get; init; }
+
+    public string? Uri { get; init; }
+
+    public Microsoft.VisualStudio.LanguageServer.Protocol.Range? Range { get; init; }
+
+    public Microsoft.VisualStudio.LanguageServer.Protocol.Range? SelectionRange { get; init; }
+
+    public string? Data { get; init; }
+}
+
+/// <summary>Server-side shape of the <c>textDocument/prepareTypeHierarchy</c> request params.</summary>
+internal sealed class TypeHierarchyPrepareParams
+{
+    public TextDocumentIdentifier? TextDocument { get; init; }
+
+    public Position? Position { get; init; }
+}
+
+/// <summary>Server-side shape of the <c>typeHierarchy/supertypes</c> request params.</summary>
+internal sealed class TypeHierarchySupertypesParams
+{
+    public TypeHierarchyItemPayload? Item { get; init; }
+}
+
+/// <summary>Server-side shape of the <c>typeHierarchy/subtypes</c> request params.</summary>
+internal sealed class TypeHierarchySubtypesParams
+{
+    public TypeHierarchyItemPayload? Item { get; init; }
 }

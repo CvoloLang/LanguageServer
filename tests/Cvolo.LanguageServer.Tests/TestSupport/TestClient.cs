@@ -204,6 +204,27 @@ internal sealed class TestClient : IDisposable
             PositionParams(uri, line, character));
     }
 
+    public Task<JArray?> PrepareTypeHierarchyAsync(Uri uri, int line, int character)
+    {
+        return _rpc.InvokeWithParameterObjectAsync<JArray?>(
+            "textDocument/prepareTypeHierarchy",
+            PositionParams(uri, line, character));
+    }
+
+    public Task<JArray?> TypeHierarchySupertypesAsync(TypeHierarchyItemPayload item)
+    {
+        return _rpc.InvokeWithParameterObjectAsync<JArray?>(
+            "typeHierarchy/supertypes",
+            new TypeHierarchySupertypesParams { Item = item });
+    }
+
+    public Task<JArray?> TypeHierarchySubtypesAsync(TypeHierarchyItemPayload item)
+    {
+        return _rpc.InvokeWithParameterObjectAsync<JArray?>(
+            "typeHierarchy/subtypes",
+            new TypeHierarchySubtypesParams { Item = item });
+    }
+
     public Task<JArray?> DocumentSymbolAsync(Uri uri)
     {
         return _rpc.InvokeWithParameterObjectAsync<JArray?>(

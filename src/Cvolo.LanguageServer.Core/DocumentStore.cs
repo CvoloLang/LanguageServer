@@ -431,6 +431,35 @@ internal sealed class DocumentStore(ILanguageBackend backend, ICoreLogger? logge
         return backend.GetImplementations(snapshot, symbol);
     }
 
+    /// <summary>
+    /// Returns the contract hierarchy item (interface or protocol) declared at
+    /// <paramref name="position"/> in the document captured in <paramref name="context"/>. The result
+    /// is snapshot-scoped; callers must honor <see cref="IsCurrent(SemanticRequestContext)"/>.
+    /// </summary>
+    public BackendTypeHierarchyResult? PrepareTypeHierarchy(SemanticRequestContext context, int position)
+    {
+        return backend.PrepareTypeHierarchy(context.CurrentProjectSnapshot, context.Document.BackendDocument, position);
+    }
+
+    /// <summary>
+    /// Returns the declared base contracts of the contract named by <paramref name="key"/> against the
+    /// snapshot. The anchor document only establishes which snapshot to read; the key carries the
+    /// contract identity, so a stale snapshot-scoped handle never has to survive a generation change.
+    /// </summary>
+    public BackendTypeHierarchyResult GetSupertypes(BackendSnapshot snapshot, DocumentUri document, string key)
+    {
+        return backend.GetSupertypes(snapshot, document, key);
+    }
+
+    /// <summary>
+    /// Returns the directly derived contracts of the contract named by <paramref name="key"/> against
+    /// the snapshot. Declared contract inheritance only; structural conformers are not children.
+    /// </summary>
+    public BackendTypeHierarchyResult GetSubtypes(BackendSnapshot snapshot, DocumentUri document, string key)
+    {
+        return backend.GetSubtypes(snapshot, document, key);
+    }
+
     public BackendRenamePreparation? PrepareRename(SemanticRequestContext context, int position)
     {
         return backend.PrepareRename(context.CurrentProjectSnapshot, context.Document.BackendDocument, position);

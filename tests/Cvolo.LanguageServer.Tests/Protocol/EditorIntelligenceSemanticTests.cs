@@ -78,6 +78,16 @@ public class EditorIntelligenceSemanticTests : IDisposable
         "    {\n" +
         "        return Width;\n" +
         "    }\n" +
+        "}\n" +
+        "\n" +
+        "public interface IBaseWidget\n" +
+        "{\n" +
+        "    void Print();\n" +
+        "}\n" +
+        "\n" +
+        "public interface IChildWidget : IBaseWidget\n" +
+        "{\n" +
+        "    void Click();\n" +
         "}\n";
 
     private static readonly string[] Lines = Source.Split('\n');
@@ -723,5 +733,42 @@ public class EditorIntelligenceSemanticTests : IDisposable
         var target = Assert.Single(targets!);
         Assert.Equal(extension.Line, target.Range.Start.Line);
         Assert.Equal(extension.Character, target.Range.Start.Character);
+    }
+
+    [Fact]
+    public async Task TypeHierarchy_NamesTheContractAndResolvesItsDeclaredBase()
+    {
+        await StartAsync();
+        await OpenAsync();
+
+        // Prepare names the contract on the child interface, and the follow-up request re-resolves it
+        // from the server-owned key, so the declared base interface comes back as a supertype.
+        var child = PositionOf(At("public interface IChildWidget") + "public interface ".Length);
+        var baseLine = PositionOf(At("public interface IBaseWidget") + "public interface ".Length).Line;
+
+        JArray? prepared = await EventuallyAsync(
+            () => _session.Client.PrepareTypeHierarchyAsync(Uri, child.Line, child.Character),
+            items => items is not null && items.Count >= 1 && items[0]!["name"]!.Value<string>() == "IChildWidget",
+            "textDocument/prepareTypeHierarchy");
+
+        var item = Assert.Single(prepared!.Children());
+        Assert.Equal("IChildWidget", item["data"]!.Value<string>());
+
+        var payload = new TypeHierarchyItemPayload
+        {
+            Name = "IChildWidget",
+            Kind = SymbolKind.Interface,
+            Uri = Uri.AbsoluteUri,
+            Data = "IChildWidget",
+        };
+
+        JArray? supertypes = await EventuallyAsync(
+            () => _session.Client.TypeHierarchySupertypesAsync(payload),
+            items => items is not null && items.Count >= 1 && items[0]!["name"]!.Value<string>() == "IBaseWidget",
+            "typeHierarchy/supertypes");
+
+        var parent = Assert.Single(supertypes!.Children());
+        Assert.Equal("IBaseWidget", parent["name"]!.Value<string>());
+        Assert.Equal(baseLine, parent["range"]!["start"]!["line"]!.Value<int>());
     }
 }

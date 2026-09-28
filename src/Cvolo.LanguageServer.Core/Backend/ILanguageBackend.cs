@@ -258,4 +258,28 @@ internal interface ILanguageBackend
     /// </summary>
     BackendDefinitionResult? GetImplementations(BackendSnapshot snapshot, BackendSymbolHandle symbol)
         => null;
+
+    /// <summary>
+    /// Returns the contract at <paramref name="position"/> if it is a declared interface or protocol,
+    /// or null otherwise. This backs textDocument/prepareTypeHierarchy; a concrete type is not a
+    /// hierarchy item because structural conformance is not declared inheritance (§12, §13).
+    /// </summary>
+    BackendTypeHierarchyResult? PrepareTypeHierarchy(BackendSnapshot snapshot, BackendDocumentHandle document, int position)
+        => null;
+
+    /// <summary>
+    /// Returns the contracts that the contract named by <paramref name="key"/> directly inherits.
+    /// <paramref name="document"/> anchors the re-resolution. Only declared contract bases are
+    /// returned; a concrete conformer is never a supertype or subtype (§13, §14, §15).
+    /// </summary>
+    BackendTypeHierarchyResult GetSupertypes(BackendSnapshot snapshot, DocumentUri document, string key)
+        => BackendTypeHierarchyResult.Empty;
+
+    /// <summary>
+    /// Returns the contracts that directly declare the contract named by <paramref name="key"/> as a
+    /// base. <paramref name="document"/> anchors the re-resolution. Direct children only; the client
+    /// follows further requests to walk the tree (§14).
+    /// </summary>
+    BackendTypeHierarchyResult GetSubtypes(BackendSnapshot snapshot, DocumentUri document, string key)
+        => BackendTypeHierarchyResult.Empty;
 }

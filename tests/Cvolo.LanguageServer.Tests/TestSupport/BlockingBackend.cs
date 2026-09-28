@@ -297,6 +297,44 @@ internal sealed class BlockingBackend : ILanguageBackend
         return CannedImplementations;
     }
 
+    /// <summary>The hierarchy result returned by <see cref="PrepareTypeHierarchy"/> (null means "none").</summary>
+    public BackendTypeHierarchyResult? CannedPreparedHierarchy { get; set; }
+
+    /// <summary>Number of times <see cref="PrepareTypeHierarchy"/> was called.</summary>
+    public int PrepareTypeHierarchyCalls => _prepareTypeHierarchyCalls;
+
+    private int _prepareTypeHierarchyCalls;
+
+    public BackendTypeHierarchyResult? PrepareTypeHierarchy(BackendSnapshot snapshot, BackendDocumentHandle document, int position)
+    {
+        Interlocked.Increment(ref _prepareTypeHierarchyCalls);
+        EnterNavigation();
+        return CannedPreparedHierarchy;
+    }
+
+    /// <summary>The supertypes returned by <see cref="GetSupertypes"/>.</summary>
+    public BackendTypeHierarchyResult CannedSupertypes { get; set; } = BackendTypeHierarchyResult.Empty;
+
+    /// <summary>The subtypes returned by <see cref="GetSubtypes"/>.</summary>
+    public BackendTypeHierarchyResult CannedSubtypes { get; set; } = BackendTypeHierarchyResult.Empty;
+
+    /// <summary>The re-resolution key of the last hierarchy follow-up the server asked for.</summary>
+    public string? LastHierarchyKey { get; private set; }
+
+    public BackendTypeHierarchyResult GetSupertypes(BackendSnapshot snapshot, DocumentUri document, string key)
+    {
+        LastHierarchyKey = key;
+        EnterNavigation();
+        return CannedSupertypes;
+    }
+
+    public BackendTypeHierarchyResult GetSubtypes(BackendSnapshot snapshot, DocumentUri document, string key)
+    {
+        LastHierarchyKey = key;
+        EnterNavigation();
+        return CannedSubtypes;
+    }
+
     public IReadOnlyList<BackendDocumentSymbol> GetDocumentSymbols(BackendSnapshot snapshot, BackendDocumentHandle document)
     {
         EnterNavigation();
