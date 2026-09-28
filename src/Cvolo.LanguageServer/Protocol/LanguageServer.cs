@@ -37,6 +37,14 @@ internal sealed class LanguageServer(
     private RenameHandler? _rename;
     private CodeActionResolveStore? _codeActionResolveStore;
     private CodeActionHandler? _codeActions;
+    private CodeLensHandler? _codeLenses;
+    private InlayHintHandler? _inlayHints;
+    private DocumentHighlightHandler? _documentHighlights;
+    private FoldingRangeHandler? _foldingRanges;
+    private SelectionRangeHandler? _selectionRanges;
+    private TypeLayoutHandler? _typeLayout;
+    private ConfigurationHandler? _configuration;
+    private EditorIntelligenceRefreshCoordinator? _editorRefresh;
     private SemanticTokensRefreshCoordinator? _refresh;
     private Timer? _deadClientExitTimer;
 
@@ -125,6 +133,39 @@ internal sealed class LanguageServer(
         () => _state.SemanticTokensEnabled && _state.RefreshSupported,
         logger);
 
+    /// <summary>textDocument/codeLens handler.</summary>
+    internal CodeLensHandler CodeLenses => _codeLenses ??= new CodeLensHandler(logger, () => Store, () => _state.EditorIntelligence);
+
+    /// <summary>textDocument/inlayHint handler.</summary>
+    internal InlayHintHandler InlayHints => _inlayHints ??= new InlayHintHandler(logger, () => Store, () => _state.EditorIntelligence);
+
+    /// <summary>textDocument/documentHighlight handler.</summary>
+    internal DocumentHighlightHandler DocumentHighlights => _documentHighlights ??= new DocumentHighlightHandler(logger, () => Store);
+
+    /// <summary>textDocument/foldingRange handler.</summary>
+    internal FoldingRangeHandler FoldingRanges => _foldingRanges ??= new FoldingRangeHandler(logger, () => Store);
+
+    /// <summary>textDocument/selectionRange handler.</summary>
+    internal SelectionRangeHandler SelectionRanges => _selectionRanges ??= new SelectionRangeHandler(logger, () => Store);
+
+    /// <summary>The <c>cvolo/typeLayout</c> request behind the editor's read-only layout view.</summary>
+    internal TypeLayoutHandler TypeLayout => _typeLayout ??= new TypeLayoutHandler(logger, () => Store);
+
+    /// <summary>workspace/didChangeConfiguration handler for the editor intelligence settings.</summary>
+    internal ConfigurationHandler Configuration => _configuration ??= new ConfigurationHandler(
+        logger,
+        settings => _state.TryApplyConfiguration(settings),
+        () => EditorIntelligenceRefresh.RequestRefresh());
+
+    /// <summary>
+    /// Server-to-client CodeLens and inlay-hint refresh coordinator. A refresh follows a concrete
+    /// event, such as a settings change; it is never scheduled on a timer and never polls.
+    /// </summary>
+    internal EditorIntelligenceRefreshCoordinator EditorIntelligenceRefresh => _editorRefresh ??= new EditorIntelligenceRefreshCoordinator(
+        () => _state.CodeLensRefreshSupported,
+        () => _state.InlayHintRefreshSupported,
+        logger);
+
     public InitializeResponse Initialize(InitializeRequestParams? initializeParams)
     {
         if (initializeParams is null)
@@ -186,6 +227,7 @@ internal sealed class LanguageServer(
 
         _state.MarkInitializeReceived(initializeParams);
         logger.Info($"Semantic tokens: enabled={_state.SemanticTokensEnabled}, refresh={_state.RefreshSupported}, tokenTypes={_state.SemanticTokenTypes.Length}, tokenModifiers={_state.SemanticTokenModifiers.Length}.");
+        logger.Info($"Editor intelligence: codeLensRefresh={_state.CodeLensRefreshSupported}, inlayHintRefresh={_state.InlayHintRefreshSupported}.");
         _diagnostics.SetRelatedInformationSupported(
             initializeParams.Capabilities?.TextDocument?.PublishDiagnostics?.RelatedInformation == true);
         logger.Info("Client initialized.");
@@ -231,6 +273,14 @@ internal sealed class LanguageServer(
                         Range = false,
                     }
                     : null,
+                CodeLensProvider = new CodeLensOptions
+                {
+                    ResolveProvider = false,
+                },
+                InlayHintProvider = true,
+                DocumentHighlightProvider = true,
+                FoldingRangeProvider = true,
+                SelectionRangeProvider = true,
             },
             new ServerInfo(ServerMetadata.ServerName, ServerMetadata.ServerVersion));
     }
@@ -346,6 +396,7 @@ internal sealed class LanguageServer(
     {
         DisarmClientWatcher();
         _refresh?.Stop();
+        _editorRefresh?.Stop();
         _sync?.Dispose();
         _codeActionResolveStore?.Clear();
         _deadClientExitTimer?.Dispose();

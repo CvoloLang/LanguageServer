@@ -471,6 +471,65 @@ internal sealed class DocumentStore(ILanguageBackend backend, ICoreLogger? logge
         return backend.ResolveCodeFix(context.Semantic.CurrentProjectSnapshot, fix);
     }
 
+    /// <summary>
+    /// Returns the whole-document annotation batch from the project snapshot captured for the
+    /// request. Callers must discard the result unless <see cref="IsCurrent(SemanticRequestContext)"/>
+    /// still holds.
+    /// </summary>
+    public IReadOnlyList<BackendCodeLensInfo> GetCodeLenses(SemanticRequestContext context, BackendCodeLensOptions? options = null)
+    {
+        return backend.GetCodeLenses(context.CurrentProjectSnapshot, context.Document.BackendDocument, options);
+    }
+
+    /// <summary>
+    /// Returns the inline annotations inside <paramref name="requestedRange"/> from the project
+    /// snapshot captured for the request. Callers must discard the result unless
+    /// <see cref="IsCurrent(SemanticRequestContext)"/> still holds.
+    /// </summary>
+    public IReadOnlyList<BackendInlayHint> GetInlayHints(SemanticRequestContext context, TextSpan requestedRange, BackendInlayHintOptions? options = null)
+    {
+        return backend.GetInlayHints(context.CurrentProjectSnapshot, context.Document.BackendDocument, requestedRange, options);
+    }
+
+    /// <summary>
+    /// Returns the semantic occurrences of the binding at <paramref name="position"/> from the
+    /// project snapshot captured for the request. Callers must discard the result unless
+    /// <see cref="IsCurrent(SemanticRequestContext)"/> still holds.
+    /// </summary>
+    public IReadOnlyList<BackendDocumentHighlight> GetDocumentHighlights(SemanticRequestContext context, int position)
+    {
+        return backend.GetDocumentHighlights(context.CurrentProjectSnapshot, context.Document.BackendDocument, position);
+    }
+
+    /// <summary>
+    /// Returns the foldable regions from the project snapshot captured for the request. Callers must
+    /// discard the result unless <see cref="IsCurrent(SemanticRequestContext)"/> still holds.
+    /// </summary>
+    public IReadOnlyList<BackendFoldingRange> GetFoldingRanges(SemanticRequestContext context)
+    {
+        return backend.GetFoldingRanges(context.CurrentProjectSnapshot, context.Document.BackendDocument);
+    }
+
+    /// <summary>
+    /// Returns one smart-selection chain per requested position from the project snapshot captured
+    /// for the request. Callers must discard the result unless
+    /// <see cref="IsCurrent(SemanticRequestContext)"/> still holds.
+    /// </summary>
+    public IReadOnlyList<BackendSelectionRange?> GetSelectionRanges(SemanticRequestContext context, IReadOnlyList<int> positions)
+    {
+        return backend.GetSelectionRanges(context.CurrentProjectSnapshot, context.Document.BackendDocument, positions);
+    }
+
+    /// <summary>
+    /// Returns the object layout of the type at <paramref name="position"/> from the project snapshot
+    /// captured for the request. Callers must discard the result unless
+    /// <see cref="IsCurrent(SemanticRequestContext)"/> still holds.
+    /// </summary>
+    public BackendTypeLayoutInspection? GetTypeLayoutAtPosition(SemanticRequestContext context, int position)
+    {
+        return backend.GetTypeLayoutAtPosition(context.CurrentProjectSnapshot, context.Document.BackendDocument, position);
+    }
+
     /// <summary>Ties together the published state and the backend tokens that produced it.</summary>
     private sealed record DocumentEntry(DocumentState State, BackendProject Project, BackendDocumentHandle Handle);
 }

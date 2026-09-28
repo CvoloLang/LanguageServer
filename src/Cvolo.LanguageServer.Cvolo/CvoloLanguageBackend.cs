@@ -18,7 +18,7 @@ namespace Cvolo.LanguageServer.Cvolo;
 /// project) and the serialization gate that keeps snapshot advancement safe
 /// across concurrent requests for the same project.
 /// </summary>
-internal sealed class CvoloLanguageBackend(
+internal sealed partial class CvoloLanguageBackend(
     IReadOnlyList<string> workspaceFolders,
     string? fallbackRoot,
     ICoreLogger? logger = null,

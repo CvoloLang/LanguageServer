@@ -1,0 +1,384 @@
+using Cvolo.Compiler.Tooling;
+using Cvolo.LanguageServer.Core.Backend;
+using Cvolo.LanguageServer.Core.Logging;
+using CoreTextSpan = Cvolo.LanguageServer.Core.Diagnostics.TextSpan;
+using ToolingTextSpan = Cvolo.Compiler.Tooling.TextSpan;
+
+namespace Cvolo.LanguageServer.Cvolo;
+
+/// <summary>
+/// Maps the compiler's editor-intelligence queries (CodeLens, inlay hints, document highlights,
+/// folding, smart selection and type layout) onto the backend-neutral core models. Every fact is
+/// taken verbatim from the captured snapshot: the adapter never re-counts references, re-derives a
+/// layout, re-scans braces or re-resolves a symbol.
+/// </summary>
+internal sealed partial class CvoloLanguageBackend
+{
+    /// <summary>Client command that opens the editor's references UI for the lens' declaration.</summary>
+    private const string ShowReferencesCommand = "cvolo.showReferences";
+
+    /// <summary>Client command that opens the read-only type layout view for the lens' type.</summary>
+    private const string ShowTypeLayoutCommand = "cvolo.showTypeLayout";
+
+    private static DocumentSnapshot RequireEditorDocument(
+        BackendSnapshot snapshot,
+        BackendDocumentHandle document,
+        string feature)
+    {
+        var toolingSnapshot = ((ToolingBackendSnapshot)snapshot).Snapshot;
+        if (!toolingSnapshot.TryGetDocument(((CvoloDocumentHandle)document).DocumentId, out DocumentSnapshot? toolingDocument))
+        {
+            throw new InvalidOperationException($"The {feature} document is not present in the captured snapshot.");
+        }
+
+        return toolingDocument;
+    }
+
+    private static int RequirePosition(DocumentSnapshot document, int position, string feature)
+    {
+        if (position < 0 || position > document.Text.Length)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(position),
+                position,
+                $"The {feature} position is outside the captured document text.");
+        }
+
+        return position;
+    }
+
+    /// <summary>
+    /// Rejects a Tooling span that cannot exist in the captured text. Malformed backend output is
+    /// dropped rather than repaired, so an impossible range never becomes an unsafe editor range.
+    /// </summary>
+    private bool TryAcceptSpan(ToolingTextSpan span, int textLength, string feature, out CoreTextSpan mapped)
+    {
+        if (span.Start >= 0 && span.Length >= 0 && span.Start + span.Length <= textLength)
+        {
+            mapped = new CoreTextSpan(span.Start, span.Length);
+            return true;
+        }
+
+        _logger.Write(
+            CoreLogLevel.Debug,
+            $"Dropped a {feature} result with an out-of-text span (start={span.Start}, length={span.Length}) over {textLength} code unit(s).");
+        mapped = default;
+        return false;
+    }
+
+    public IReadOnlyList<BackendCodeLensInfo> GetCodeLenses(BackendSnapshot snapshot, BackendDocumentHandle document, BackendCodeLensOptions? options = null)
+    {
+        var toolingSnapshot = ((ToolingBackendSnapshot)snapshot).Snapshot;
+        DocumentSnapshot toolingDocument = RequireEditorDocument(snapshot, document, "code-lens");
+        int textLength = toolingDocument.Text.Length;
+
+        IReadOnlyList<ToolingCodeLensInfo> lenses = toolingDocument.GetCodeLenses(MapCodeLensOptions(options));
+        var mapped = new List<BackendCodeLensInfo>(lenses.Count);
+        foreach (ToolingCodeLensInfo lens in lenses)
+        {
+            if (!TryAcceptSpan(lens.Range, textLength, "code-lens", out CoreTextSpan range))
+            {
+                continue;
+            }
+
+            BackendCodeLensKind? kind = lens.Kind switch
+            {
+                ToolingCodeLensKind.References => BackendCodeLensKind.References,
+                ToolingCodeLensKind.Layout => BackendCodeLensKind.Layout,
+                ToolingCodeLensKind.NativeInterop => BackendCodeLensKind.NativeInterop,
+                _ => null,
+            };
+
+            if (kind is null)
+            {
+                _logger.Write(CoreLogLevel.Debug, $"Dropped a code lens with unknown kind '{lens.Kind}'.");
+                continue;
+            }
+
+            // The lens range is the declared name itself, so its start is a position the client's own
+            // references/layout query can resolve without the adapter resolving anything (§11, §21).
+            var command = kind switch
+            {
+                BackendCodeLensKind.References => new BackendCodeLensCommand(
+                    ShowReferencesCommand,
+                    [new BackendCodeLensPositionArgument(lens.Range.Start)]),
+                BackendCodeLensKind.Layout => new BackendCodeLensCommand(
+                    ShowTypeLayoutCommand,
+                    [new BackendCodeLensPositionArgument(lens.Range.Start)]),
+                _ => null,
+            };
+
+            mapped.Add(new BackendCodeLensInfo(range, kind.Value, lens.Title, command));
+        }
+
+        return mapped;
+    }
+
+    /// <summary>
+    /// Projects the core's category selection onto the tooling's own query options, so a disabled
+    /// category is never computed instead of being filtered out afterwards.
+    /// </summary>
+    private static ToolingCodeLensOptions MapCodeLensOptions(BackendCodeLensOptions? options)
+    {
+        BackendCodeLensOptions effective = options ?? BackendCodeLensOptions.Default;
+        return new ToolingCodeLensOptions
+        {
+            References = effective.References,
+            Layout = effective.Layout,
+            Members = effective.Members,
+            NativeInterop = effective.NativeInterop,
+        };
+    }
+
+    private static ToolingInlayHintOptions MapInlayHintOptions(BackendInlayHintOptions? options)
+    {
+        BackendInlayHintOptions effective = options ?? BackendInlayHintOptions.Default;
+        return new ToolingInlayHintOptions
+        {
+            Types = effective.Types,
+            Parameters = effective.Parameters,
+            ReceiverMutability = effective.ReceiverMutability,
+            Layout = effective.Layout,
+            EnumValues = effective.EnumValues,
+            GenericArguments = effective.GenericArguments,
+        };
+    }
+
+    public IReadOnlyList<BackendInlayHint> GetInlayHints(BackendSnapshot snapshot, BackendDocumentHandle document, CoreTextSpan requestedRange, BackendInlayHintOptions? options = null)
+    {
+        var toolingSnapshot = ((ToolingBackendSnapshot)snapshot).Snapshot;
+        DocumentSnapshot toolingDocument = RequireEditorDocument(snapshot, document, "inlay-hint");
+        int textLength = toolingDocument.Text.Length;
+
+        if (requestedRange.Start < 0
+            || requestedRange.Length < 0
+            || requestedRange.Start + requestedRange.Length > textLength)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(requestedRange),
+                requestedRange,
+                $"The inlay-hint range is outside the captured document text of {textLength} code unit(s).");
+        }
+
+        IReadOnlyList<ToolingInlayHint> hints = toolingDocument.GetInlayHints(
+            requestedRange.Start,
+            requestedRange.Length,
+            MapInlayHintOptions(options));
+        var mapped = new List<BackendInlayHint>(hints.Count);
+        foreach (ToolingInlayHint hint in hints)
+        {
+            if (hint.Position < 0 || hint.Position > textLength)
+            {
+                _logger.Write(CoreLogLevel.Debug, $"Dropped an inlay hint at out-of-text position {hint.Position}.");
+                continue;
+            }
+
+            BackendInlayHintKind? kind = hint.Kind switch
+            {
+                ToolingInlayHintKind.Type => BackendInlayHintKind.Type,
+                ToolingInlayHintKind.Parameter => BackendInlayHintKind.Parameter,
+                ToolingInlayHintKind.ReceiverMutability => BackendInlayHintKind.ReceiverMutability,
+                ToolingInlayHintKind.Layout => BackendInlayHintKind.Layout,
+                ToolingInlayHintKind.EnumValue => BackendInlayHintKind.EnumValue,
+                ToolingInlayHintKind.GenericArgument => BackendInlayHintKind.GenericArgument,
+                _ => null,
+            };
+
+            if (kind is null)
+            {
+                _logger.Write(CoreLogLevel.Debug, $"Dropped an inlay hint with unknown kind '{hint.Kind}'.");
+                continue;
+            }
+
+            mapped.Add(new BackendInlayHint(
+                hint.Position,
+                kind.Value,
+                hint.Label,
+                hint.PaddingLeft,
+                hint.PaddingRight,
+                hint.RelatedSymbol is { } related ? new CvoloSymbolHandle(toolingSnapshot, related) : null));
+        }
+
+        return mapped;
+    }
+
+    public IReadOnlyList<BackendDocumentHighlight> GetDocumentHighlights(BackendSnapshot snapshot, BackendDocumentHandle document, int position)
+    {
+        DocumentSnapshot toolingDocument = RequireEditorDocument(snapshot, document, "document-highlight");
+        RequirePosition(toolingDocument, position, "document-highlight");
+        int textLength = toolingDocument.Text.Length;
+
+        IReadOnlyList<ToolingDocumentHighlight> highlights = toolingDocument.GetDocumentHighlights(position);
+        var mapped = new List<BackendDocumentHighlight>(highlights.Count);
+        foreach (ToolingDocumentHighlight highlight in highlights)
+        {
+            if (!TryAcceptSpan(highlight.Range, textLength, "document-highlight", out CoreTextSpan range))
+            {
+                continue;
+            }
+
+            BackendReferenceAccessKind kind = highlight.AccessKind switch
+            {
+                ReferenceAccessKind.Read => BackendReferenceAccessKind.Read,
+                ReferenceAccessKind.Write => BackendReferenceAccessKind.Write,
+                ReferenceAccessKind.ReadWrite => BackendReferenceAccessKind.ReadWrite,
+                ReferenceAccessKind.Declaration => BackendReferenceAccessKind.Declaration,
+                _ => BackendReferenceAccessKind.Read,
+            };
+
+            mapped.Add(new BackendDocumentHighlight(range, kind));
+        }
+
+        return mapped;
+    }
+
+    public IReadOnlyList<BackendFoldingRange> GetFoldingRanges(BackendSnapshot snapshot, BackendDocumentHandle document)
+    {
+        DocumentSnapshot toolingDocument = RequireEditorDocument(snapshot, document, "folding");
+        int textLength = toolingDocument.Text.Length;
+
+        IReadOnlyList<ToolingFoldingRange> ranges = toolingDocument.GetFoldingRanges();
+        var mapped = new List<BackendFoldingRange>(ranges.Count);
+        foreach (ToolingFoldingRange range in ranges)
+        {
+            if (!TryAcceptSpan(range.Range, textLength, "folding", out CoreTextSpan span))
+            {
+                continue;
+            }
+
+            BackendFoldingRangeKind kind = range.Kind switch
+            {
+                ToolingFoldingKind.None => BackendFoldingRangeKind.None,
+                ToolingFoldingKind.Comment => BackendFoldingRangeKind.Comment,
+                ToolingFoldingKind.Documentation => BackendFoldingRangeKind.Documentation,
+                _ => BackendFoldingRangeKind.None,
+            };
+
+            mapped.Add(new BackendFoldingRange(span, kind));
+        }
+
+        return mapped;
+    }
+
+    public IReadOnlyList<BackendSelectionRange?> GetSelectionRanges(BackendSnapshot snapshot, BackendDocumentHandle document, IReadOnlyList<int> positions)
+    {
+        DocumentSnapshot toolingDocument = RequireEditorDocument(snapshot, document, "selection-range");
+        int textLength = toolingDocument.Text.Length;
+        foreach (int position in positions)
+        {
+            RequirePosition(toolingDocument, position, "selection-range");
+        }
+
+        IReadOnlyList<ToolingSelectionRange?> chains = toolingDocument.GetSelectionRanges(positions);
+        var mapped = new BackendSelectionRange?[positions.Count];
+        for (int i = 0; i < chains.Count && i < mapped.Length; i++)
+        {
+            mapped[i] = MapSelectionChain(chains[i], textLength);
+        }
+
+        return mapped;
+    }
+
+    /// <summary>
+    /// Rebuilds one chain level by level. A level whose span cannot exist in the captured text drops
+    /// the whole chain rather than emitting a partially valid one, because a reader walks the chain
+    /// outwards and must never meet a level that is not real.
+    /// </summary>
+    private BackendSelectionRange? MapSelectionChain(ToolingSelectionRange? chain, int textLength)
+    {
+        if (chain is null)
+        {
+            return null;
+        }
+
+        var levels = new List<CoreTextSpan>();
+        for (ToolingSelectionRange? level = chain; level is not null; level = level.Parent)
+        {
+            if (!TryAcceptSpan(level.Range, textLength, "selection-range", out CoreTextSpan span))
+            {
+                return null;
+            }
+
+            levels.Add(span);
+        }
+
+        BackendSelectionRange? parent = null;
+        for (int i = levels.Count - 1; i >= 0; i--)
+        {
+            parent = new BackendSelectionRange(levels[i], parent);
+        }
+
+        return parent;
+    }
+
+    public BackendTypeLayoutInspection? GetTypeLayoutAtPosition(BackendSnapshot snapshot, BackendDocumentHandle document, int position)
+    {
+        DocumentSnapshot toolingDocument = RequireEditorDocument(snapshot, document, "type-layout");
+        RequirePosition(toolingDocument, position, "type-layout");
+
+        TypeLayoutInspection? layout = toolingDocument.GetTypeLayoutAtPosition(position);
+        return layout is null ? null : MapTypeLayout(layout);
+    }
+
+    private BackendTypeLayoutInspection? MapTypeLayout(TypeLayoutInspection layout)
+    {
+        var members = new List<BackendTypeLayoutMember>(layout.Members.Count);
+        foreach (TypeLayoutMemberInspection member in layout.Members)
+        {
+            members.Add(new BackendTypeLayoutMember(member.Name, member.TypeDisplay, member.Offset, member.Size, member.Alignment));
+        }
+
+        var padding = new List<BackendTypeLayoutPadding>(layout.Padding.Count);
+        foreach (TypeLayoutPaddingInspection region in layout.Padding)
+        {
+            BackendTypeLayoutPaddingKind kind = region.Kind switch
+            {
+                ToolingPaddingKind.Internal => BackendTypeLayoutPaddingKind.Internal,
+                ToolingPaddingKind.Tail => BackendTypeLayoutPaddingKind.Tail,
+                _ => BackendTypeLayoutPaddingKind.Internal,
+            };
+
+            padding.Add(new BackendTypeLayoutPadding(region.Offset, region.Size, kind));
+        }
+
+        if (layout.Size < 0 || layout.Alignment <= 0 || layout.PayloadSize < 0 || layout.PaddingSize < 0)
+        {
+            _logger.Write(CoreLogLevel.Debug, $"Dropped the layout of '{layout.TypeDisplay}': the compiler reported negative or zero size/alignment values.");
+            return null;
+        }
+
+        // Every member and padding run must fit inside the reported object size, otherwise the numbers
+        // cannot be rendered as a consistent table.
+        foreach (BackendTypeLayoutMember member in members)
+        {
+            if (member.Offset < 0 || member.Size < 0 || member.Offset + member.Size > layout.Size)
+            {
+                _logger.Write(CoreLogLevel.Debug, $"Dropped the layout of '{layout.TypeDisplay}': member '{member.Name}' does not fit inside the reported size.");
+                return null;
+            }
+        }
+
+        foreach (BackendTypeLayoutPadding region in padding)
+        {
+            if (region.Offset < 0 || region.Size < 0 || region.Offset + region.Size > layout.Size)
+            {
+                _logger.Write(CoreLogLevel.Debug, $"Dropped the layout of '{layout.TypeDisplay}': padding at offset {region.Offset} does not fit inside the reported size.");
+                return null;
+            }
+        }
+
+        return new BackendTypeLayoutInspection(
+            layout.TypeDisplay,
+            layout.TargetDisplay,
+            layout.Size,
+            layout.Alignment,
+            layout.PayloadSize,
+            layout.PaddingSize,
+            layout.Stride,
+            layout.ElementCount,
+            layout.ElementSize,
+            layout.ElementAlignment,
+            members,
+            padding);
+    }
+}

@@ -98,6 +98,8 @@ internal sealed class SessionState
             initializeParams?.Capabilities?.TextDocument?.SignatureHelp?.SignatureInformation?.ParameterInformation?.LabelOffsetSupport == true;
         SignatureHelpActiveParameterSupport =
             initializeParams?.Capabilities?.TextDocument?.SignatureHelp?.SignatureInformation?.ActiveParameterSupport == true;
+        CodeLensRefreshSupported = initializeParams?.Capabilities?.Workspace?.CodeLens?.RefreshSupport == true;
+        InlayHintRefreshSupported = initializeParams?.Capabilities?.Workspace?.InlayHint?.RefreshSupport == true;
         _initializeReceived = true;
     }
 
@@ -141,6 +143,43 @@ internal sealed class SessionState
             && CodeActionResolveSupportProperties?.Contains("edit", StringComparer.Ordinal) == true;
     }
 
+    /// <summary>Whether the client supports <c>workspace/codeLens/refresh</c>.</summary>
+    public bool CodeLensRefreshSupported { get; private set; }
+
+    /// <summary>Whether the client supports <c>workspace/inlayHint/refresh</c>.</summary>
+    public bool InlayHintRefreshSupported { get; private set; }
+
+    private EditorIntelligenceSettings _editorIntelligence = EditorIntelligenceSettings.Default;
+
+    /// <summary>
+    /// The editor intelligence settings currently in force (§64). Read on every semantic request,
+    /// so a change takes effect for the next request without a restart (§65).
+    /// </summary>
+    public EditorIntelligenceSettings EditorIntelligence => Volatile.Read(ref _editorIntelligence);
+
+    /// <summary>
+    /// Adopts the settings from a configuration notification. Returns whether anything actually
+    /// changed, so a notification that repeats the current values does not trigger a needless
+    /// refresh. A notification without a settings payload is ignored entirely.
+    /// </summary>
+    public bool TryApplyConfiguration(Newtonsoft.Json.Linq.JObject? settings)
+    {
+        if (settings is null)
+        {
+            return false;
+        }
+
+        EditorIntelligenceSettings current = EditorIntelligence;
+        EditorIntelligenceSettings updated = EditorIntelligenceSettings.FromConfiguration(settings, current);
+        if (updated == current)
+        {
+            return false;
+        }
+
+        Volatile.Write(ref _editorIntelligence, updated);
+        return true;
+    }
+
     private static readonly string[] CanonicalTokenTypes =
     [
         "namespace", "type", "struct", "enum", "interface", "typeParameter",
@@ -158,6 +197,7 @@ internal sealed class SessionState
 
     /// <summary>Whether the client supports <c>workspace/semanticTokens/refresh</c>.</summary>
     public bool RefreshSupported { get; private set; }
+
 
     /// <summary>The negotiated effective token-type legend (server canonical order).</summary>
     public string[] SemanticTokenTypes { get; private set; } = [];

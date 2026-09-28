@@ -339,6 +339,144 @@ internal sealed class BlockingBackend : ILanguageBackend
         return CodeFixResolveFactory is { } factory ? factory(fix) : CannedCodeFixResolution;
     }
 
+    private readonly ManualResetEventSlim _editorBlock = new(initialState: true);
+    private readonly ManualResetEventSlim _editorEntered = new(initialState: false);
+
+    /// <summary>When true, every editor-intelligence call throws an ordinary exception.</summary>
+    public bool ThrowOnEditorIntelligence { get; set; }
+
+    public int CodeLensCalls;
+
+    public int InlayHintCalls;
+
+    public int DocumentHighlightCalls;
+
+    public int FoldingRangeCalls;
+
+    public int SelectionRangeCalls;
+
+    public int TypeLayoutCalls;
+
+    /// <summary>The lenses returned by <see cref="GetCodeLenses"/>.</summary>
+    public IReadOnlyList<BackendCodeLensInfo> CannedCodeLenses { get; set; } = [];
+
+    /// <summary>When set, replaces the canned lenses; used to feed malformed spans.</summary>
+    public Func<IReadOnlyList<BackendCodeLensInfo>>? CodeLensFactory { get; set; }
+
+    /// <summary>The options the last <see cref="GetCodeLenses"/> call received.</summary>
+    public BackendCodeLensOptions? LastCodeLensOptions { get; private set; }
+
+    /// <summary>The hints returned by <see cref="GetInlayHints"/>.</summary>
+    public IReadOnlyList<BackendInlayHint> CannedInlayHints { get; set; } = [];
+
+    /// <summary>When set, replaces the canned hints; used to feed invalid positions.</summary>
+    public Func<IReadOnlyList<BackendInlayHint>>? InlayHintFactory { get; set; }
+
+    /// <summary>The range and options the last <see cref="GetInlayHints"/> call received.</summary>
+    public (TextSpan Range, BackendInlayHintOptions? Options) LastInlayHintRequest { get; private set; }
+
+    /// <summary>The highlights returned by <see cref="GetDocumentHighlights"/>.</summary>
+    public IReadOnlyList<BackendDocumentHighlight> CannedHighlights { get; set; } = [];
+
+    /// <summary>When set, replaces the canned highlights; used to feed malformed spans.</summary>
+    public Func<IReadOnlyList<BackendDocumentHighlight>>? HighlightFactory { get; set; }
+
+    /// <summary>The folding ranges returned by <see cref="GetFoldingRanges"/>.</summary>
+    public IReadOnlyList<BackendFoldingRange> CannedFoldingRanges { get; set; } = [];
+
+    /// <summary>When set, replaces the canned folding ranges; used to feed malformed spans.</summary>
+    public Func<IReadOnlyList<BackendFoldingRange>>? FoldingRangeFactory { get; set; }
+
+    /// <summary>The selection chains returned by <see cref="GetSelectionRanges"/>.</summary>
+    public IReadOnlyList<BackendSelectionRange?> CannedSelectionRanges { get; set; } = [];
+
+    /// <summary>When set, replaces the canned selection chains; used to feed malformed chains.</summary>
+    public Func<IReadOnlyList<BackendSelectionRange?>>? SelectionRangeFactory { get; set; }
+
+    /// <summary>The positions the last <see cref="GetSelectionRanges"/> call received.</summary>
+    public IReadOnlyList<int> LastSelectionPositions { get; private set; } = [];
+
+    /// <summary>The layout returned by <see cref="GetTypeLayoutAtPosition"/>.</summary>
+    public BackendTypeLayoutInspection? CannedTypeLayout { get; set; }
+
+    /// <summary>When set, replaces the canned layout; used to feed malformed layouts.</summary>
+    public Func<BackendTypeLayoutInspection?>? TypeLayoutFactory { get; set; }
+
+    /// <summary>Arms the next editor-intelligence call to block until <see cref="ReleaseEditorIntelligence"/>.</summary>
+    public void ArmEditorIntelligence()
+    {
+        _editorEntered.Reset();
+        _editorBlock.Reset();
+    }
+
+    /// <summary>Lets a blocked editor-intelligence call finish.</summary>
+    public void ReleaseEditorIntelligence()
+    {
+        _editorBlock.Set();
+    }
+
+    /// <summary>Waits until an editor-intelligence call has entered the backend.</summary>
+    public bool WaitUntilEditorIntelligenceEntered(TimeSpan timeout)
+    {
+        return _editorEntered.Wait(timeout);
+    }
+
+    private void EnterEditorIntelligence()
+    {
+        _editorEntered.Set();
+        _editorBlock.Wait();
+
+        if (ThrowOnEditorIntelligence)
+        {
+            throw new InvalidOperationException("simulated editor intelligence failure");
+        }
+    }
+
+    public IReadOnlyList<BackendCodeLensInfo> GetCodeLenses(BackendSnapshot snapshot, BackendDocumentHandle document, BackendCodeLensOptions? options = null)
+    {
+        Interlocked.Increment(ref CodeLensCalls);
+        LastCodeLensOptions = options;
+        EnterEditorIntelligence();
+        return CodeLensFactory is { } factory ? factory() : CannedCodeLenses;
+    }
+
+    public IReadOnlyList<BackendInlayHint> GetInlayHints(BackendSnapshot snapshot, BackendDocumentHandle document, TextSpan requestedRange, BackendInlayHintOptions? options = null)
+    {
+        Interlocked.Increment(ref InlayHintCalls);
+        LastInlayHintRequest = (requestedRange, options);
+        EnterEditorIntelligence();
+        return InlayHintFactory is { } factory ? factory() : CannedInlayHints;
+    }
+
+    public IReadOnlyList<BackendDocumentHighlight> GetDocumentHighlights(BackendSnapshot snapshot, BackendDocumentHandle document, int position)
+    {
+        Interlocked.Increment(ref DocumentHighlightCalls);
+        EnterEditorIntelligence();
+        return HighlightFactory is { } factory ? factory() : CannedHighlights;
+    }
+
+    public IReadOnlyList<BackendFoldingRange> GetFoldingRanges(BackendSnapshot snapshot, BackendDocumentHandle document)
+    {
+        Interlocked.Increment(ref FoldingRangeCalls);
+        EnterEditorIntelligence();
+        return FoldingRangeFactory is { } factory ? factory() : CannedFoldingRanges;
+    }
+
+    public IReadOnlyList<BackendSelectionRange?> GetSelectionRanges(BackendSnapshot snapshot, BackendDocumentHandle document, IReadOnlyList<int> positions)
+    {
+        Interlocked.Increment(ref SelectionRangeCalls);
+        LastSelectionPositions = positions;
+        EnterEditorIntelligence();
+        return SelectionRangeFactory is { } factory ? factory() : CannedSelectionRanges;
+    }
+
+    public BackendTypeLayoutInspection? GetTypeLayoutAtPosition(BackendSnapshot snapshot, BackendDocumentHandle document, int position)
+    {
+        Interlocked.Increment(ref TypeLayoutCalls);
+        EnterEditorIntelligence();
+        return TypeLayoutFactory is { } factory ? factory() : CannedTypeLayout;
+    }
+
     private sealed class FakeProject : BackendProject
     {
         public long Generation;

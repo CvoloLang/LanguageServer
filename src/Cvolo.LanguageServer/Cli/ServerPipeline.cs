@@ -52,6 +52,7 @@ internal static class ServerPipeline
         JsonRpc rpc = new(handler);
         server.Diagnostics.Attach(rpc);
         server.Refresh.Attach(rpc);
+        server.EditorIntelligenceRefresh.Attach(rpc);
         rpc.AddLocalRpcTarget(server, new JsonRpcTargetOptions
         {
             MethodNameTransform = m => m.Length == 0 ? m : char.ToLowerInvariant(m[0]) + m.Substring(1),
@@ -103,6 +104,41 @@ internal static class ServerPipeline
             UseSingleObjectParameterDeserialization = true,
         });
         rpc.AddLocalRpcTarget(server.CodeActions, new JsonRpcTargetOptions
+        {
+            MethodNameTransform = m => m.Length == 0 ? m : char.ToLowerInvariant(m[0]) + m.Substring(1),
+            UseSingleObjectParameterDeserialization = true,
+        });
+        rpc.AddLocalRpcTarget(server.CodeLenses, new JsonRpcTargetOptions
+        {
+            MethodNameTransform = m => m.Length == 0 ? m : char.ToLowerInvariant(m[0]) + m.Substring(1),
+            UseSingleObjectParameterDeserialization = true,
+        });
+        rpc.AddLocalRpcTarget(server.InlayHints, new JsonRpcTargetOptions
+        {
+            MethodNameTransform = m => m.Length == 0 ? m : char.ToLowerInvariant(m[0]) + m.Substring(1),
+            UseSingleObjectParameterDeserialization = true,
+        });
+        rpc.AddLocalRpcTarget(server.DocumentHighlights, new JsonRpcTargetOptions
+        {
+            MethodNameTransform = m => m.Length == 0 ? m : char.ToLowerInvariant(m[0]) + m.Substring(1),
+            UseSingleObjectParameterDeserialization = true,
+        });
+        rpc.AddLocalRpcTarget(server.FoldingRanges, new JsonRpcTargetOptions
+        {
+            MethodNameTransform = m => m.Length == 0 ? m : char.ToLowerInvariant(m[0]) + m.Substring(1),
+            UseSingleObjectParameterDeserialization = true,
+        });
+        rpc.AddLocalRpcTarget(server.SelectionRanges, new JsonRpcTargetOptions
+        {
+            MethodNameTransform = m => m.Length == 0 ? m : char.ToLowerInvariant(m[0]) + m.Substring(1),
+            UseSingleObjectParameterDeserialization = true,
+        });
+        rpc.AddLocalRpcTarget(server.TypeLayout, new JsonRpcTargetOptions
+        {
+            MethodNameTransform = m => m.Length == 0 ? m : char.ToLowerInvariant(m[0]) + m.Substring(1),
+            UseSingleObjectParameterDeserialization = true,
+        });
+        rpc.AddLocalRpcTarget(server.Configuration, new JsonRpcTargetOptions
         {
             MethodNameTransform = m => m.Length == 0 ? m : char.ToLowerInvariant(m[0]) + m.Substring(1),
             UseSingleObjectParameterDeserialization = true,

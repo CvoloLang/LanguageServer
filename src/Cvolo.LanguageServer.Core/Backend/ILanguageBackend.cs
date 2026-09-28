@@ -172,4 +172,58 @@ internal interface ILanguageBackend
     /// </summary>
     BackendCodeFixResolution ResolveCodeFix(BackendSnapshot snapshot, BackendCodeFixHandle fix)
         => new BackendCodeFixFailure("Code fixes are not supported by this language backend.");
+
+    /// <summary>
+    /// Returns the whole-document batch of editor annotations for <paramref name="document"/> from
+    /// the captured <paramref name="snapshot"/>. The backend computes every count, title and
+    /// command argument in one pass over its own per-snapshot indexes; the core never re-counts
+    /// references or recomputes a layout. A null or default <paramref name="options"/> selects the
+    /// recommended set. A document with no annotations yields an empty list.
+    /// </summary>
+    IReadOnlyList<BackendCodeLensInfo> GetCodeLenses(BackendSnapshot snapshot, BackendDocumentHandle document, BackendCodeLensOptions? options = null)
+        => Array.Empty<BackendCodeLensInfo>();
+
+    /// <summary>
+    /// Returns the inline annotations whose position falls inside <paramref name="requestedRange"/>
+    /// (an absolute UTF-16 code-unit span over the captured snapshot text) from the same immutable
+    /// <paramref name="snapshot"/>. Work is restricted to the requested range. Every hint comes
+    /// from a resolved compiler fact: a construct the backend could not resolve contributes no
+    /// hint rather than a guess (§17, §62). A null or default <paramref name="options"/> selects the
+    /// recommended set.
+    /// </summary>
+    IReadOnlyList<BackendInlayHint> GetInlayHints(BackendSnapshot snapshot, BackendDocumentHandle document, TextSpan requestedRange, BackendInlayHintOptions? options = null)
+        => Array.Empty<BackendInlayHint>();
+
+    /// <summary>
+    /// Returns the semantic occurrences bound to the same declaration as <paramref name="position"/>
+    /// (an absolute UTF-16 code-unit offset), each classified as a read, a write, both, or a
+    /// declaration. Returns an empty list when nothing binds there; there is deliberately no
+    /// same-spelling fallback (§41).
+    /// </summary>
+    IReadOnlyList<BackendDocumentHighlight> GetDocumentHighlights(BackendSnapshot snapshot, BackendDocumentHandle document, int position)
+        => Array.Empty<BackendDocumentHighlight>();
+
+    /// <summary>
+    /// Returns the foldable regions of <paramref name="document"/> from the captured
+    /// <paramref name="snapshot"/>. Regions come from parsed syntax and comment tokens, so the
+    /// protocol layer never scans braces itself (§43, §56).
+    /// </summary>
+    IReadOnlyList<BackendFoldingRange> GetFoldingRanges(BackendSnapshot snapshot, BackendDocumentHandle document)
+        => Array.Empty<BackendFoldingRange>();
+
+    /// <summary>
+    /// Returns one smart-selection chain per requested position, in request order. A null entry
+    /// means the position has no meaningful enclosing region; the result is aligned with the
+    /// request so the protocol layer can answer position-for-position (§45).
+    /// </summary>
+    IReadOnlyList<BackendSelectionRange?> GetSelectionRanges(BackendSnapshot snapshot, BackendDocumentHandle document, IReadOnlyList<int> positions)
+        => positions.Select(static _ => (BackendSelectionRange?)null).ToArray();
+
+    /// <summary>
+    /// Returns the complete object layout of the type at <paramref name="position"/> (an absolute
+    /// UTF-16 code-unit offset) for the active target, or null when no type declaration binds
+    /// there. The numbers are the compiler's own; nothing here is recomputed or ABI-guessed (§21).
+    /// </summary>
+    BackendTypeLayoutInspection? GetTypeLayoutAtPosition(BackendSnapshot snapshot, BackendDocumentHandle document, int position)
+        => null;
 }

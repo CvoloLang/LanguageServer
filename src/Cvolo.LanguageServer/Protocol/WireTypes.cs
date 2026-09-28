@@ -38,6 +38,26 @@ internal sealed record ServerCapabilities
     public SemanticTokensOptions? SemanticTokensProvider { get; init; }
 
     public object? CodeActionProvider { get; init; }
+
+    public CodeLensOptions? CodeLensProvider { get; init; }
+
+    public bool? InlayHintProvider { get; init; }
+
+    public bool? DocumentHighlightProvider { get; init; }
+
+    public bool? FoldingRangeProvider { get; init; }
+
+    public bool? SelectionRangeProvider { get; init; }
+}
+
+/// <summary>
+/// LSP 3.17 <c>codeLensProvider</c> options. A local shape so an explicit
+/// <c>resolveProvider: false</c> is always serialized: the server answers every
+/// lens in one request and never resolves a single declaration lazily (§4).
+/// </summary>
+internal sealed record CodeLensOptions
+{
+    public bool ResolveProvider { get; init; }
 }
 
 /// <summary>
@@ -183,6 +203,22 @@ internal sealed class WorkspaceClientCapabilitiesPayload
     public SemanticTokensWorkspaceClientCapabilitiesPayload? SemanticTokens { get; init; }
 
     public WorkspaceEditClientCapabilitiesPayload? WorkspaceEdit { get; init; }
+
+    public CodeLensWorkspaceClientCapabilitiesPayload? CodeLens { get; init; }
+
+    public InlayHintWorkspaceClientCapabilitiesPayload? InlayHint { get; init; }
+}
+
+/// <summary><c>workspace.codeLens.refreshSupport</c>: whether the client accepts a server-requested lens refresh.</summary>
+internal sealed class CodeLensWorkspaceClientCapabilitiesPayload
+{
+    public bool? RefreshSupport { get; init; }
+}
+
+/// <summary><c>workspace.inlayHint.refreshSupport</c>: whether the client accepts a server-requested hint refresh.</summary>
+internal sealed class InlayHintWorkspaceClientCapabilitiesPayload
+{
+    public bool? RefreshSupport { get; init; }
 }
 
 internal sealed class WorkspaceEditClientCapabilitiesPayload
@@ -420,4 +456,122 @@ internal sealed record CodeActionPayload
     public DiagnosticPayload[]? Diagnostics { get; init; }
     public WorkspaceEditPayload? Edit { get; init; }
     public object? Data { get; init; }
+}
+
+/// <summary>Server-side shape of <c>textDocument/codeLens</c> params.</summary>
+internal sealed class CodeLensParamsPayload
+{
+    public TextDocumentIdentifier? TextDocument { get; init; }
+}
+
+/// <summary>
+/// Server-side shape of <c>textDocument/documentHighlight</c> params. A work-done or partial-result
+/// token may accompany the request; neither is semantic authority, so both are ignored.
+/// </summary>
+internal sealed class DocumentHighlightParamsPayload
+{
+    public TextDocumentIdentifier? TextDocument { get; init; }
+
+    public Position? Position { get; init; }
+}
+
+/// <summary>
+/// Server-side shape of <c>textDocument/inlayHint</c> params. The requested range is carried
+/// verbatim: the server maps it onto the captured text and never widens it to the document.
+/// </summary>
+internal sealed class InlayHintParamsPayload
+{
+    public TextDocumentIdentifier? TextDocument { get; init; }
+
+    public Microsoft.VisualStudio.LanguageServer.Protocol.Range? Range { get; init; }
+}
+
+/// <summary>
+/// Server-side shape of the <c>InlayHint</c> result. The pinned protocol model predates inlay
+/// hints, so the server defines the shape it needs: the label is presented verbatim and the
+/// padding flags plus the compiler-derived category are the only decoration a client requires.
+/// </summary>
+internal sealed record InlayHintPayload
+{
+    public Position Position { get; init; } = null!;
+
+    public string Label { get; init; } = string.Empty;
+
+    public bool? PaddingLeft { get; init; }
+
+    public bool? PaddingRight { get; init; }
+
+    public string? Kind { get; init; }
+}
+
+/// <summary>Server-side shape of <c>textDocument/foldingRange</c> params.</summary>
+internal sealed class FoldingRangeParamsPayload
+{
+    public TextDocumentIdentifier? TextDocument { get; init; }
+}
+
+/// <summary>Server-side shape of <c>textDocument/selectionRange</c> params.</summary>
+internal sealed class SelectionRangeParamsPayload
+{
+    public TextDocumentIdentifier? TextDocument { get; init; }
+
+    public Position[]? Positions { get; init; }
+}
+
+/// <summary>
+/// One level of a smart-selection chain. <see cref="Parent"/> is the next larger region, so a
+/// reader starts at the innermost level and walks outwards, exactly as the backend described it.
+/// </summary>
+internal sealed record SelectionRangePayload
+{
+    public Microsoft.VisualStudio.LanguageServer.Protocol.Range Range { get; init; } = null!;
+
+    public SelectionRangePayload? Parent { get; init; }
+}
+
+/// <summary>
+/// Server-side shape of the <c>cvolo/typeLayout</c> request params. The client asks for the
+/// detailed layout of the type at one position; the extension renders the response and never
+/// derives an offset, a size, an alignment or a padding run itself (§22, §57).
+/// </summary>
+internal sealed class TypeLayoutParamsPayload
+{
+    public TextDocumentIdentifier? TextDocument { get; init; }
+
+    public Position? Position { get; init; }
+}
+
+/// <summary>
+/// The complete object layout of one type for one target, exactly as the compiler computed it.
+/// Every number is a compiler fact; the client may only format them (§19, §22).
+/// </summary>
+internal sealed record TypeLayoutResponse(
+    string TypeDisplay,
+    string TargetDisplay,
+    long Size,
+    long Alignment,
+    long PayloadSize,
+    long PaddingSize,
+    long? Stride,
+    long? ElementCount,
+    long? ElementSize,
+    long? ElementAlignment,
+    TypeLayoutMemberResponse[] Members,
+    TypeLayoutPaddingResponse[] Padding);
+
+/// <summary>One member's placement inside its type. A union's members share one offset.</summary>
+internal sealed record TypeLayoutMemberResponse(
+    string Name,
+    string TypeDisplay,
+    long Offset,
+    long Size,
+    long Alignment);
+
+/// <summary>One run of bytes that carry no member, reported with the compiler's own classification.</summary>
+internal sealed record TypeLayoutPaddingResponse(long Offset, long Size, string Kind);
+
+/// <summary>Server-side shape of the <c>workspace/didChangeConfiguration</c> notification.</summary>
+internal sealed class DidChangeConfigurationParams
+{
+    public Newtonsoft.Json.Linq.JObject? Settings { get; init; }
 }

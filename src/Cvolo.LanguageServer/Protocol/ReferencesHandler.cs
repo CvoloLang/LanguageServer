@@ -93,9 +93,11 @@ internal sealed class ReferencesHandler(ILspLogger logger, Func<DocumentStore> s
 
     private static bool TryMapSpan(string text, TextSpan span, Dictionary<DocumentUri, LineIndex> indexes, DocumentUri uri, out LspRange range)
     {
-        range = null!;
-        if (span.Start < 0 || span.Length <= 0 || span.End > text.Length || IntersectsLineTerminator(text, span))
+        if (span.Start < 0 || span.Length <= 0)
+        {
+            range = null!;
             return false;
+        }
 
         if (!indexes.TryGetValue(uri, out LineIndex? index))
         {
@@ -103,28 +105,17 @@ internal sealed class ReferencesHandler(ILspLogger logger, Func<DocumentStore> s
             indexes[uri] = index;
         }
 
-        if (!index.TryGetRange(span, out TextRange mapped) || mapped.Start.Line != mapped.End.Line)
-            return false;
-        if (mapped.End.Character - mapped.Start.Character != span.Length)
-            return false;
-
-        range = new LspRange
+        if (!SpanMapper.TryMapSingleLineRange(text, index, text.Length, span, out LspRange mapped))
         {
-            Start = new Position(mapped.Start.Line, mapped.Start.Character),
-            End = new Position(mapped.End.Line, mapped.End.Character),
-        };
+            range = null!;
+            return false;
+        }
+
+        range = mapped;
         return true;
     }
 
-    internal static bool IntersectsLineTerminator(string text, TextSpan span)
-    {
-        for (int i = span.Start; i < span.End; i++)
-        {
-            if (text[i] is '\r' or '\n')
-                return true;
-        }
-        return false;
-    }
+    internal static bool IntersectsLineTerminator(string text, TextSpan span) => SpanMapper.IntersectsLineTerminator(text, span);
 
     private sealed class ReferenceKeyComparer : IEqualityComparer<(string Path, int Start, int Length)>
     {

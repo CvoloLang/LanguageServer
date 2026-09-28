@@ -212,6 +212,140 @@ internal sealed class TestClient : IDisposable
             cancellationToken);
     }
 
+    public Task<JArray?> CodeLensAsync(Uri uri)
+    {
+        return _rpc.InvokeWithParameterObjectAsync<JArray?>(
+            "textDocument/codeLens",
+            new CodeLensParamsPayload { TextDocument = new TextDocumentIdentifier { Uri = uri } });
+    }
+
+    public Task<JArray?> CodeLensWithTokenAsync(Uri uri, CancellationToken cancellationToken)
+    {
+        return _rpc.InvokeWithParameterObjectAsync<JArray?>(
+            "textDocument/codeLens",
+            new CodeLensParamsPayload { TextDocument = new TextDocumentIdentifier { Uri = uri } },
+            cancellationToken);
+    }
+
+    public Task<JArray?> InlayHintsAsync(Uri uri, LspRange range)
+    {
+        return _rpc.InvokeWithParameterObjectAsync<JArray?>(
+            "textDocument/inlayHint",
+            new InlayHintParamsPayload { TextDocument = new TextDocumentIdentifier { Uri = uri }, Range = range });
+    }
+
+    public Task<JArray?> InlayHintsWithTokenAsync(Uri uri, LspRange range, CancellationToken cancellationToken)
+    {
+        return _rpc.InvokeWithParameterObjectAsync<JArray?>(
+            "textDocument/inlayHint",
+            new InlayHintParamsPayload { TextDocument = new TextDocumentIdentifier { Uri = uri }, Range = range },
+            cancellationToken);
+    }
+
+    public Task<JArray?> DocumentHighlightsAsync(Uri uri, int line, int character)
+    {
+        return _rpc.InvokeWithParameterObjectAsync<JArray?>(
+            "textDocument/documentHighlight",
+            new DocumentHighlightParamsPayload
+            {
+                TextDocument = new TextDocumentIdentifier { Uri = uri },
+                Position = new Position { Line = line, Character = character },
+            });
+    }
+
+    public Task<JArray?> DocumentHighlightsWithTokenAsync(Uri uri, int line, int character, CancellationToken cancellationToken)
+    {
+        return _rpc.InvokeWithParameterObjectAsync<JArray?>(
+            "textDocument/documentHighlight",
+            new DocumentHighlightParamsPayload
+            {
+                TextDocument = new TextDocumentIdentifier { Uri = uri },
+                Position = new Position { Line = line, Character = character },
+            },
+            cancellationToken);
+    }
+
+    public Task<JArray?> FoldingRangesAsync(Uri uri)
+    {
+        return _rpc.InvokeWithParameterObjectAsync<JArray?>(
+            "textDocument/foldingRange",
+            new FoldingRangeParamsPayload { TextDocument = new TextDocumentIdentifier { Uri = uri } });
+    }
+
+    public Task<JArray?> FoldingRangesWithTokenAsync(Uri uri, CancellationToken cancellationToken)
+    {
+        return _rpc.InvokeWithParameterObjectAsync<JArray?>(
+            "textDocument/foldingRange",
+            new FoldingRangeParamsPayload { TextDocument = new TextDocumentIdentifier { Uri = uri } },
+            cancellationToken);
+    }
+
+    public Task<JArray?> SelectionRangesAsync(Uri uri, params (int Line, int Character)[] positions)
+    {
+        return _rpc.InvokeWithParameterObjectAsync<JArray?>(
+            "textDocument/selectionRange",
+            new SelectionRangeParamsPayload
+            {
+                TextDocument = new TextDocumentIdentifier { Uri = uri },
+                Positions = Array.ConvertAll(positions, p => new Position { Line = p.Line, Character = p.Character }),
+            });
+    }
+
+    public Task<JArray?> SelectionRangesWithTokenAsync(Uri uri, CancellationToken cancellationToken, params (int Line, int Character)[] positions)
+    {
+        return _rpc.InvokeWithParameterObjectAsync<JArray?>(
+            "textDocument/selectionRange",
+            new SelectionRangeParamsPayload
+            {
+                TextDocument = new TextDocumentIdentifier { Uri = uri },
+                Positions = Array.ConvertAll(positions, p => new Position { Line = p.Line, Character = p.Character }),
+            },
+            cancellationToken);
+    }
+
+    public Task<TypeLayoutResponse?> TypeLayoutAsync(Uri uri, int line, int character)
+    {
+        return _rpc.InvokeWithParameterObjectAsync<TypeLayoutResponse?>(
+            "cvolo/typeLayout",
+            new TypeLayoutParamsPayload
+            {
+                TextDocument = new TextDocumentIdentifier { Uri = uri },
+                Position = new Position { Line = line, Character = character },
+            });
+    }
+
+    public Task<TypeLayoutResponse?> TypeLayoutWithTokenAsync(Uri uri, int line, int character, CancellationToken cancellationToken)
+    {
+        return _rpc.InvokeWithParameterObjectAsync<TypeLayoutResponse?>(
+            "cvolo/typeLayout",
+            new TypeLayoutParamsPayload
+            {
+                TextDocument = new TextDocumentIdentifier { Uri = uri },
+                Position = new Position { Line = line, Character = character },
+            },
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// The raw response of the layout request, for wire-shape assertions: every field name a client
+    /// depends on is checked exactly as it travels (§22).
+    /// </summary>
+    public Task<JObject?> TypeLayoutJsonAsync(Uri uri, int line, int character)
+    {
+        return _rpc.InvokeWithParameterObjectAsync<JObject?>(
+            "cvolo/typeLayout",
+            new TypeLayoutParamsPayload
+            {
+                TextDocument = new TextDocumentIdentifier { Uri = uri },
+                Position = new Position { Line = line, Character = character },
+            });
+    }
+
+    public Task NotifyDidChangeConfigurationAsync(JObject? settings)
+    {
+        return _rpc.NotifyAsync("workspace/didChangeConfiguration", new global::Cvolo.LanguageServer.Protocol.DidChangeConfigurationParams { Settings = settings });
+    }
+
     public Task<Hover?> HoverWithTokenAsync(Uri uri, int line, int character, CancellationToken cancellationToken)
     {
         return _rpc.InvokeWithParameterObjectAsync<Hover?>(

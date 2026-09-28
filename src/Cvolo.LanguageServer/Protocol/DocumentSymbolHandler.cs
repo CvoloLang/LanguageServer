@@ -95,8 +95,8 @@ internal sealed class DocumentSymbolHandler(ILspLogger logger, Func<DocumentStor
     {
         // A node with an invalid range or selection span and its whole subtree are
         // omitted; ranges are never clamped or repaired (§19.5).
-        if (!TryMapRange(symbol.Range, index, textLength, out LspRange? range)
-            || !TryMapRange(symbol.SelectionSpan, index, textLength, out LspRange? selection))
+        if (!TryMapRange(symbol.Range, index, textLength, out LspRange range)
+            || !TryMapRange(symbol.SelectionSpan, index, textLength, out LspRange selection))
         {
             return null;
         }
@@ -129,7 +129,7 @@ internal sealed class DocumentSymbolHandler(ILspLogger logger, Func<DocumentStor
         string? containerName,
         List<SymbolInformation> output)
     {
-        if (TryMapRange(symbol.SelectionSpan, index, textLength, out LspRange? selection))
+        if (TryMapRange(symbol.SelectionSpan, index, textLength, out LspRange selection))
         {
             output.Add(new SymbolInformation
             {
@@ -150,22 +150,15 @@ internal sealed class DocumentSymbolHandler(ILspLogger logger, Func<DocumentStor
         }
     }
 
-    private static bool TryMapRange(TextSpan span, LineIndex index, int textLength, out LspRange? range)
+    private static bool TryMapRange(TextSpan span, LineIndex index, int textLength, out LspRange range)
     {
-        if (span.Start >= 0
-            && span.Length >= 0
-            && span.End <= textLength
-            && index.TryGetRange(span, out TextRange mapped))
+        if (SpanMapper.TryMapRange(index, textLength, span, out LspRange mapped))
         {
-            range = new LspRange
-            {
-                Start = new Position(mapped.Start.Line, mapped.Start.Character),
-                End = new Position(mapped.End.Line, mapped.End.Character),
-            };
+            range = mapped;
             return true;
         }
 
-        range = null;
+        range = null!;
         return false;
     }
 
