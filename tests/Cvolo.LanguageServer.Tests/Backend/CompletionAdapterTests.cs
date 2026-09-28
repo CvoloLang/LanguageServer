@@ -75,10 +75,11 @@ public class CompletionAdapterTests : IDisposable
     }
 
     [Fact]
-    public void GetCompletions_HandleNotInSnapshot_Throws()
+    public void GetCompletions_HandleNotInSnapshot_ReturnsEmpty()
     {
         // A handle minted by another workspace has a structurally distinct
-        // DocumentId, so it is absent from this snapshot.
+        // DocumentId, so it is absent from this snapshot. A stale handle is an
+        // empty answer, not a failure: the request is simply not resolvable here.
         using var other = TestWorkspace.CreateProject(["other.cvl"]);
         var otherBackend = new CvoloLanguageBackend([other.DirectoryPath], null, _logger);
         var otherUri = DocumentUri.Create(other.PathOf("other.cvl"));
@@ -89,7 +90,8 @@ public class CompletionAdapterTests : IDisposable
         BackendDocumentHandle handle = Resolve(project);
         BackendSnapshot snapshot = _backend.UpdateDocument(project, handle, "int main() { return 0; }\n");
 
-        Assert.Throws<InvalidOperationException>(() => _backend.GetCompletions(snapshot, foreignHandle, 0));
+        BackendCompletionResult result = _backend.GetCompletions(snapshot, foreignHandle, 0);
+        Assert.Empty(result.Items);
     }
 
     [Theory]

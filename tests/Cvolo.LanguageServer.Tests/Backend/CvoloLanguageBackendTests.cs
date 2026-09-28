@@ -1,3 +1,4 @@
+using Cvolo.Compiler.Tooling;
 using Cvolo.LanguageServer.Core.Backend;
 using Cvolo.LanguageServer.Core.Documents;
 using Cvolo.LanguageServer.Core.Logging;
@@ -272,6 +273,35 @@ public class CvoloLanguageBackendTests : IDisposable
         Assert.NotNull(project);
         var session = (CvoloProjectSession)project!;
         Assert.Equal(parent.DirectoryPath, session.Project.ProjectPath);
+    }
+
+    [Fact]
+    public void PackageSourceSession_KeepsEveryDocumentWhenTheTextAdvances()
+    {
+        // A package session's universe is the extracted package, not the project at the same path.
+        // Advancing one of its documents must keep the package's other files: the editor still has
+        // them open and every request resolves against the captured snapshot.
+        var sources = new[]
+        {
+            new PackageSourceDocument("Demo", "1.0.0", "API.cvl", @"C:\pkg\Demo\API.cvl", "int A() { return 0; }"),
+            new PackageSourceDocument("Demo", "1.0.0", "Extra.cvl", @"C:\pkg\Demo\Extra.cvl", "int B() { return 1; }"),
+        };
+        var workspace = CvoloWorkspace.Create();
+        var project = workspace.OpenPackageSource(_workspace.ProjectFilePath, sources);
+        var session = new CvoloProjectSession(workspace, project, isPackageSource: true);
+
+        Assert.True(session.IsPackageSource);
+        var ids = project.InitialSnapshot.DocumentIds;
+        Assert.Equal(2, ids.Count);
+
+        var snapshot = (ToolingBackendSnapshot)_backend.UpdateDocument(
+            session,
+            new CvoloDocumentHandle(ids[0]),
+            "int A() { return 1; }");
+
+        Assert.Equal(2, snapshot.Snapshot.DocumentIds.Count);
+        Assert.Equal("int A() { return 1; }", snapshot.Snapshot.Documents[ids[0]].Text.ToString());
+        Assert.Equal("int B() { return 1; }", snapshot.Snapshot.Documents[ids[1]].Text.ToString());
     }
 
     private static void WriteProject(string directory, string documentRelativePath)

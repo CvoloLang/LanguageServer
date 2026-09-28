@@ -21,18 +21,18 @@ internal sealed partial class CvoloLanguageBackend
     /// <summary>Client command that opens the read-only type layout view for the lens' type.</summary>
     private const string ShowTypeLayoutCommand = "cvolo.showTypeLayout";
 
-    private static DocumentSnapshot RequireEditorDocument(
-        BackendSnapshot snapshot,
-        BackendDocumentHandle document,
-        string feature)
+    /// <summary>
+    /// Resolves the document a request targets against the captured snapshot. A document that is not
+    /// part of the snapshot is not an error: the request is simply stale relative to the snapshot the
+    /// caller captured (a closed file, or a session that was rebuilt), so the caller answers empty
+    /// rather than failing.
+    /// </summary>
+    private static DocumentSnapshot? FindEditorDocument(BackendSnapshot snapshot, BackendDocumentHandle document)
     {
         var toolingSnapshot = ((ToolingBackendSnapshot)snapshot).Snapshot;
-        if (!toolingSnapshot.TryGetDocument(((CvoloDocumentHandle)document).DocumentId, out DocumentSnapshot? toolingDocument))
-        {
-            throw new InvalidOperationException($"The {feature} document is not present in the captured snapshot.");
-        }
-
-        return toolingDocument;
+        return toolingSnapshot.TryGetDocument(((CvoloDocumentHandle)document).DocumentId, out DocumentSnapshot? toolingDocument)
+            ? toolingDocument
+            : null;
     }
 
     private static int RequirePosition(DocumentSnapshot document, int position, string feature)
@@ -70,7 +70,9 @@ internal sealed partial class CvoloLanguageBackend
     public IReadOnlyList<BackendCodeLensInfo> GetCodeLenses(BackendSnapshot snapshot, BackendDocumentHandle document, BackendCodeLensOptions? options = null)
     {
         var toolingSnapshot = ((ToolingBackendSnapshot)snapshot).Snapshot;
-        DocumentSnapshot toolingDocument = RequireEditorDocument(snapshot, document, "code-lens");
+        if (FindEditorDocument(snapshot, document) is not { } toolingDocument)
+            return [];
+
         int textLength = toolingDocument.Text.Length;
 
         IReadOnlyList<ToolingCodeLensInfo> lenses = toolingDocument.GetCodeLenses(MapCodeLensOptions(options));
@@ -187,7 +189,9 @@ internal sealed partial class CvoloLanguageBackend
     public IReadOnlyList<BackendInlayHint> GetInlayHints(BackendSnapshot snapshot, BackendDocumentHandle document, CoreTextSpan requestedRange, BackendInlayHintOptions? options = null)
     {
         var toolingSnapshot = ((ToolingBackendSnapshot)snapshot).Snapshot;
-        DocumentSnapshot toolingDocument = RequireEditorDocument(snapshot, document, "inlay-hint");
+        if (FindEditorDocument(snapshot, document) is not { } toolingDocument)
+            return [];
+
         int textLength = toolingDocument.Text.Length;
 
         if (requestedRange.Start < 0
@@ -247,7 +251,9 @@ internal sealed partial class CvoloLanguageBackend
 
     public IReadOnlyList<BackendDocumentHighlight> GetDocumentHighlights(BackendSnapshot snapshot, BackendDocumentHandle document, int position)
     {
-        DocumentSnapshot toolingDocument = RequireEditorDocument(snapshot, document, "document-highlight");
+        if (FindEditorDocument(snapshot, document) is not { } toolingDocument)
+            return [];
+
         RequirePosition(toolingDocument, position, "document-highlight");
         int textLength = toolingDocument.Text.Length;
 
@@ -277,7 +283,9 @@ internal sealed partial class CvoloLanguageBackend
 
     public IReadOnlyList<BackendFoldingRange> GetFoldingRanges(BackendSnapshot snapshot, BackendDocumentHandle document)
     {
-        DocumentSnapshot toolingDocument = RequireEditorDocument(snapshot, document, "folding");
+        if (FindEditorDocument(snapshot, document) is not { } toolingDocument)
+            return [];
+
         int textLength = toolingDocument.Text.Length;
 
         IReadOnlyList<ToolingFoldingRange> ranges = toolingDocument.GetFoldingRanges();
@@ -305,7 +313,9 @@ internal sealed partial class CvoloLanguageBackend
 
     public IReadOnlyList<BackendSelectionRange?> GetSelectionRanges(BackendSnapshot snapshot, BackendDocumentHandle document, IReadOnlyList<int> positions)
     {
-        DocumentSnapshot toolingDocument = RequireEditorDocument(snapshot, document, "selection-range");
+        if (FindEditorDocument(snapshot, document) is not { } toolingDocument)
+            return positions.Select(static _ => (BackendSelectionRange?)null).ToArray();
+
         int textLength = toolingDocument.Text.Length;
         foreach (int position in positions)
         {
@@ -356,7 +366,9 @@ internal sealed partial class CvoloLanguageBackend
 
     public BackendTypeLayoutInspection? GetTypeLayoutAtPosition(BackendSnapshot snapshot, BackendDocumentHandle document, int position)
     {
-        DocumentSnapshot toolingDocument = RequireEditorDocument(snapshot, document, "type-layout");
+        if (FindEditorDocument(snapshot, document) is not { } toolingDocument)
+            return null;
+
         RequirePosition(toolingDocument, position, "type-layout");
 
         TypeLayoutInspection? layout = toolingDocument.GetTypeLayoutAtPosition(position);
@@ -365,14 +377,18 @@ internal sealed partial class CvoloLanguageBackend
 
     public BackendTypeLayoutInspection? GetTypeLayoutBySubject(BackendSnapshot snapshot, BackendDocumentHandle document, string subject)
     {
-        DocumentSnapshot toolingDocument = RequireEditorDocument(snapshot, document, "type-layout");
+        if (FindEditorDocument(snapshot, document) is not { } toolingDocument)
+            return null;
+
         TypeLayoutInspection? layout = toolingDocument.GetTypeLayoutBySubject(subject);
         return layout is null ? null : MapTypeLayout((ToolingBackendSnapshot)snapshot, layout);
     }
 
     public BackendDefinitionResult? GetTypeDefinitions(BackendSnapshot snapshot, BackendDocumentHandle document, int position)
     {
-        DocumentSnapshot toolingDocument = RequireEditorDocument(snapshot, document, "type-definition");
+        if (FindEditorDocument(snapshot, document) is not { } toolingDocument)
+            return null;
+
         RequirePosition(toolingDocument, position, "type-definition");
 
         IReadOnlyList<SymbolDefinition> definitions = toolingDocument.GetTypeDefinitions(position);
@@ -425,7 +441,9 @@ internal sealed partial class CvoloLanguageBackend
 
     public BackendTypeHierarchyResult? PrepareTypeHierarchy(BackendSnapshot snapshot, BackendDocumentHandle document, int position)
     {
-        DocumentSnapshot toolingDocument = RequireEditorDocument(snapshot, document, "type-hierarchy");
+        if (FindEditorDocument(snapshot, document) is not { } toolingDocument)
+            return null;
+
         RequirePosition(toolingDocument, position, "type-hierarchy");
 
         ToolingHierarchyItem? item = toolingDocument.PrepareTypeHierarchy(position);

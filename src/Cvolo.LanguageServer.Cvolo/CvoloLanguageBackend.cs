@@ -93,7 +93,7 @@ internal sealed partial class CvoloLanguageBackend(
         _logger.Write(
             CoreLogLevel.Info,
             $"Opened package source session '{source.PackageId}@{source.Version}' for '{owner.Project.ProjectPath}'.");
-        return new CvoloProjectSession(workspace, project);
+        return new CvoloProjectSession(workspace, project, isPackageSource: true);
     }
 
     private bool TryFindOwningSession(string path, out CvoloProjectSession session)
@@ -135,6 +135,11 @@ internal sealed partial class CvoloLanguageBackend(
 
     private bool TryRefreshSession(CvoloProjectSession session)
     {
+        // A package-source session deliberately does not re-discover documents: its universe is the
+        // extracted package, not the consuming project under the same path (see IsPackageSource).
+        if (session.IsPackageSource)
+            return false;
+
         lock (session.Gate)
         {
             var comparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
@@ -205,6 +210,16 @@ internal sealed partial class CvoloLanguageBackend(
     {
         if (!session.Current.TryGetDocument(documentId, out DocumentSnapshot? edited))
             return session.Current;
+
+        // A package-source session advances its in-memory text in place. Re-discovering through the
+        // consuming project would swap the package universe for the project's own documents and
+        // invalidate every open package file's DocumentId.
+        if (session.IsPackageSource)
+        {
+            ProjectSnapshot updated = session.Current.WithDocument(documentId, SourceText.From(text));
+            session.Advance(updated);
+            return updated;
+        }
 
         var comparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
         var overrides = new Dictionary<string, string>(comparer);
@@ -309,7 +324,15 @@ internal sealed partial class CvoloLanguageBackend(
         foreach (BackendDocumentHandle handle in targets)
         {
             var documentId = ((CvoloDocumentHandle)handle).DocumentId;
-            DocumentSnapshot document = toolingSnapshot.GetDocument(documentId);
+            // A target captured against an earlier snapshot can be gone by the time the run executes
+            // (the document closed, or a session was rebuilt). One stale target must not fail the
+            // whole diagnostic run, so it is skipped rather than dereferenced.
+            if (!toolingSnapshot.TryGetDocument(documentId, out DocumentSnapshot? document))
+            {
+                _logger.Write(CoreLogLevel.Debug, "Skipped a diagnostic target that is not present in the captured snapshot.");
+                continue;
+            }
+
             DocumentUri documentUri = ToDocumentUri(document.FilePath);
             texts[documentUri] = document.Text.ToString();
 
@@ -446,10 +469,10 @@ internal sealed partial class CvoloLanguageBackend(
 
         if (!toolingSnapshot.TryGetDocument(documentId, out DocumentSnapshot? toolingDocument))
         {
-            // The handle does not belong to the supplied snapshot. Refuse the
-            // operation rather than fabricate a result for a document we cannot
-            // see; the handler degrades the failure to a null response (§20).
-            throw new InvalidOperationException("The completion document is not present in the captured snapshot.");
+            // A document that is not part of the supplied snapshot is stale relative to it (a closed
+            // file, or a rebuilt session), not an error. Answer with no items rather than failing the
+            // request, so a stale handle never surfaces as a warning in the client log (§20).
+            return new BackendCompletionResult(default, []);
         }
 
         int textLength = toolingDocument.Text.Length;
@@ -552,7 +575,7 @@ internal sealed partial class CvoloLanguageBackend(
         var documentId = ((CvoloDocumentHandle)document).DocumentId;
 
         if (!toolingSnapshot.TryGetDocument(documentId, out DocumentSnapshot? toolingDocument))
-            throw new InvalidOperationException("The signature-help document is not present in the captured snapshot.");
+            return null;
 
         if (position < 0 || position > toolingDocument.Text.Length)
             throw new ArgumentOutOfRangeException(nameof(position), position, "The signature-help position is outside the captured document text.");
@@ -581,10 +604,9 @@ internal sealed partial class CvoloLanguageBackend(
 
         if (!toolingSnapshot.TryGetDocument(documentId, out DocumentSnapshot? toolingDocument))
         {
-            // The handle does not belong to the supplied snapshot. Refuse rather
-            // than fabricate a symbol for a document we cannot see; the handler
-            // degrades the failure to a null response (§23).
-            throw new InvalidOperationException("The navigation document is not present in the captured snapshot.");
+            // A document that is not part of the supplied snapshot is stale relative to it, so the
+            // symbol is simply not resolvable here; a null answer is the honest result (§23).
+            return null;
         }
 
         if (position < 0 || position > toolingDocument.Text.Length)
@@ -688,7 +710,7 @@ internal sealed partial class CvoloLanguageBackend(
         var toolingSnapshot = ((ToolingBackendSnapshot)snapshot).Snapshot;
         var documentId = ((CvoloDocumentHandle)document).DocumentId;
         if (!toolingSnapshot.TryGetDocument(documentId, out DocumentSnapshot? toolingDocument))
-            throw new InvalidOperationException("The rename document is not present in the captured snapshot.");
+            return null;
 
         RenamePreparation? preparation = toolingDocument.PrepareRename(position);
         if (preparation is null)
@@ -733,7 +755,9 @@ internal sealed partial class CvoloLanguageBackend(
 
         if (!toolingSnapshot.TryGetDocument(documentId, out DocumentSnapshot? toolingDocument))
         {
-            throw new InvalidOperationException("The document-symbol document is not present in the captured snapshot.");
+            // A document missing from the supplied snapshot is stale, so it contributes no outline
+            // rather than failing the request (§19.5's invalid-range spirit).
+            return [];
         }
 
         IReadOnlyList<DocumentSymbolInfo> symbols = toolingDocument.GetDocumentSymbols();
@@ -769,9 +793,7 @@ internal sealed partial class CvoloLanguageBackend(
         var documentId = ((CvoloDocumentHandle)document).DocumentId;
 
         if (!toolingSnapshot.TryGetDocument(documentId, out DocumentSnapshot? toolingDocument))
-        {
-            throw new InvalidOperationException("The semantic-token document is not present in the captured snapshot.");
-        }
+            return new BackendSemanticTokenResult([]);
 
         IReadOnlyList<SemanticTokenInfo> tokens = toolingDocument.GetSemanticTokens();
         var mapped = new List<BackendSemanticToken>(tokens.Count);
@@ -985,16 +1007,25 @@ internal sealed class CvoloProjectSession : BackendProject
 {
     private readonly Dictionary<DocumentId, SourceText> _diskBaselines;
 
-    public CvoloProjectSession(CvoloWorkspace workspace, CvoloProject project)
+    public CvoloProjectSession(CvoloWorkspace workspace, CvoloProject project, bool isPackageSource = false)
     {
         Workspace = workspace;
         Project = project;
+        IsPackageSource = isPackageSource;
         Current = project.InitialSnapshot;
         _diskBaselines = project.InitialSnapshot.Documents
             .ToDictionary(pair => pair.Key, pair => pair.Value.Text);
     }
 
     public CvoloWorkspace Workspace { get; }
+
+    /// <summary>
+    /// True when this session was opened over an extracted package's own sources rather than the
+    /// consuming project. Such a session must never re-discover from the project path: the text it
+    /// serves is the package's, and advancing through <see cref="CvoloProject.Advance"/> would
+    /// replace its documents with the consuming project's and drop every open package file.
+    /// </summary>
+    public bool IsPackageSource { get; }
 
     public CvoloProject Project { get; private set; }
 
