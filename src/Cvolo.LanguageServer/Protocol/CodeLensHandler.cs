@@ -70,7 +70,13 @@ internal sealed class CodeLensHandler(
 
         var index = new LineIndex(context.Document.Text);
         int textLength = context.Document.Text.Length;
-        string documentUriText = documentUri.LocalPath;
+
+        // A lens command is handed back to the client, which resolves the document it names, so it
+        // has to carry the URI the client understands. The local path is not a URI: on Windows
+        // Uri treats "d:\dir\file.cvl" as scheme "d", and a client that parses that back cannot
+        // resolve the resource. Echoing the validated document's absolute URI keeps the round trip
+        // exact and never re-encodes a path into something the client did not send.
+        string documentUriText = textDocument.Uri!.AbsoluteUri;
 
         var ordered = new List<BackendCodeLensInfo>(lenses);
         ordered.Sort(CompareLenses);

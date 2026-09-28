@@ -81,7 +81,13 @@ public class CodeLensHandlerTests : IDisposable
 
         JArray arguments = Assert.IsType<JArray>(lens["command"]!["arguments"]!);
         Assert.Equal(2, arguments.Count);
-        Assert.Equal(_workspace.PathOf("a.cvl"), arguments[0]!.Value<string>());
+
+        // The client resolves the document the command names, so the argument has to be the URI it
+        // understands: a bare local path parses as a "d:" scheme and cannot be resolved.
+        string document = arguments[0]!.Value<string>()!;
+        Assert.Equal(Uri.AbsoluteUri, document);
+        Assert.StartsWith("file:///", document, StringComparison.Ordinal);
+        Assert.Equal(_workspace.PathOf("a.cvl"), Uri.LocalPath);
         Assert.Equal(0, arguments[1]!["line"]!.Value<int>());
         Assert.Equal(4, arguments[1]!["character"]!.Value<int>());
     }
@@ -133,13 +139,13 @@ public class CodeLensHandlerTests : IDisposable
         await OpenAsync();
         _backend.CannedCodeLenses =
         [
-            new BackendCodeLensInfo(new TextSpan(4, 4), BackendCodeLensKind.NativeInterop, "import kernel32 · CreateFileW"),
+            new BackendCodeLensInfo(new TextSpan(4, 4), BackendCodeLensKind.NativeInterop, "import kernel32 | CreateFileW"),
         ];
 
         JArray? lenses = await _session.Client.CodeLensAsync(Uri).WithTimeout("codeLens");
 
         JToken lens = Assert.Single(lenses!);
-        Assert.Equal("import kernel32 · CreateFileW", lens["command"]!["title"]!.Value<string>());
+        Assert.Equal("import kernel32 | CreateFileW", lens["command"]!["title"]!.Value<string>());
         Assert.Equal(string.Empty, lens["command"]!["command"]!.Value<string>());
     }
 
