@@ -60,6 +60,7 @@ internal sealed class InlayHintHandler(
         }
 
         BackendInlayHintOptions options = settingsAccessor().InlayHints;
+        BackendOffsetFormat offsetFormat = settingsAccessor().Layout.OffsetFormat;
         IReadOnlyList<BackendInlayHint> hints;
         try
         {
@@ -84,7 +85,7 @@ internal sealed class InlayHintHandler(
         var mapped = new List<InlayHintPayload>(hints.Count);
         foreach (BackendInlayHint hint in hints)
         {
-            if (TryMapHint(hint, index, out InlayHintPayload payload))
+            if (TryMapHint(hint, index, offsetFormat, out InlayHintPayload payload))
             {
                 mapped.Add(payload);
             }
@@ -113,7 +114,7 @@ internal sealed class InlayHintHandler(
     /// text is dropped rather than clamped: an annotation in the wrong place is a false fact about
     /// the source, not a cosmetic error (§84).
     /// </summary>
-    private bool TryMapHint(BackendInlayHint hint, LineIndex index, out InlayHintPayload payload)
+    private bool TryMapHint(BackendInlayHint hint, LineIndex index, BackendOffsetFormat offsetFormat, out InlayHintPayload payload)
     {
         if (!index.TryGetPosition(hint.Position, out TextPosition mapped))
         {
@@ -125,13 +126,23 @@ internal sealed class InlayHintHandler(
         payload = new InlayHintPayload
         {
             Position = SpanMapper.ToPosition(mapped),
-            Label = hint.Label,
+            Label = PresentLabel(hint, offsetFormat),
             PaddingLeft = hint.PaddingLeft,
             PaddingRight = hint.PaddingRight,
             Kind = MapKind(hint.Kind),
         };
         return true;
     }
+
+    /// <summary>
+    /// The text a reader sees. It is the compiler's own presentation, except for a field layout hint,
+    /// which is written again from the compiler's structured numbers so the offset notation matches
+    /// the one the field CodeLens and the detailed view use for the same field (§17, §9).
+    /// </summary>
+    private static string PresentLabel(BackendInlayHint hint, BackendOffsetFormat offsetFormat) =>
+        hint.FieldLayout is { } field
+            ? LayoutTextFormatter.FieldLayoutHint(field, offsetFormat)
+            : hint.Label;
 
     /// <summary>
     /// The compiler-derived category travels with the hint so a client can present or filter it

@@ -32,7 +32,8 @@ internal sealed record BackendInlayHint(
     string Label,
     bool PaddingLeft = false,
     bool PaddingRight = false,
-    BackendSymbolHandle? RelatedSymbol = null);
+    BackendSymbolHandle? RelatedSymbol = null,
+    BackendFieldLayoutInfo? FieldLayout = null);
 
 /// <summary>
 /// Which categories of inlay hint the caller wants. The defaults are the recommended settings: the

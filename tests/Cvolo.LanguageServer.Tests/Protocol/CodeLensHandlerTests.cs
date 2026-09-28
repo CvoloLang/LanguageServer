@@ -294,4 +294,138 @@ public class CodeLensHandlerTests : IDisposable
         JArray? lenses = await _session.Client.CodeLensAsync(Uri).WithTimeout("next codeLens");
         Assert.Single(lenses!);
     }
+
+    private static BackendCodeLensInfo Field(int start, int length, long offset, long size, long alignment, long paddingBefore) =>
+        new(
+            new TextSpan(start, length),
+            BackendCodeLensKind.Layout,
+            $"offset {offset}B | size {size}B | align {alignment}B",
+            new BackendCodeLensCommand("cvolo.showTypeLayout", [new BackendCodeLensPositionArgument(start)]),
+            new BackendFieldLayoutInfo("Header", "Length", offset, size, alignment, paddingBefore));
+
+    [Fact]
+    public async Task AFieldLayoutLens_ShowsTheCompilerNumbersAndOpensTheTypeLayout()
+    {
+        await StartAsync();
+        await OpenAsync();
+        _backend.CannedCodeLenses = [Field(18, 6, 4, 4, 4, 3)];
+
+        JArray? lenses = await _session.Client.CodeLensAsync(Uri).WithTimeout("codeLens");
+
+        JToken lens = Assert.Single(lenses!);
+        Assert.Equal("offset 4B | size 4B | align 4B | pad 3B before", lens["command"]!["title"]!.Value<string>());
+
+        // A field is not a type, so the action opens the layout of the type that stores it, at the
+        // field's own declaration. The client is handed the position, never a parsed field name.
+        Assert.Equal("cvolo.showTypeLayout", lens["command"]!["command"]!.Value<string>());
+        JArray arguments = Assert.IsType<JArray>(lens["command"]!["arguments"]!);
+        Assert.Equal(Uri.AbsoluteUri, arguments[0]!.Value<string>());
+        Assert.Equal(0, arguments[1]!["line"]!.Value<int>());
+        Assert.Equal(18, arguments[1]!["character"]!.Value<int>());
+    }
+
+    [Fact]
+    public async Task AFieldWithNoPrecedingPadding_ShowsNoPaddingFact()
+    {
+        await StartAsync();
+        await OpenAsync();
+        _backend.CannedCodeLenses = [Field(4, 4, 0, 8, 8, 0)];
+
+        JArray? lenses = await _session.Client.CodeLensAsync(Uri).WithTimeout("codeLens");
+
+        Assert.Equal("offset 0B | size 8B | align 8B", Assert.Single(lenses!)["command"]!["title"]!.Value<string>());
+    }
+
+    [Fact]
+    public async Task TheFieldLensGateAndSubFlags_ReachTheBackend()
+    {
+        await StartAsync();
+        await OpenAsync();
+
+        await _session.Client.CodeLensAsync(Uri).WithTimeout("codeLens");
+        Assert.NotNull(_backend.LastCodeLensOptions);
+        Assert.False(_backend.LastCodeLensOptions!.Members);
+        Assert.False(_backend.LastCodeLensOptions.FieldLayout);
+
+        // The master gate opens both per-field kinds at once, and each sub-flag can still veto one.
+        await _session.Client
+            .NotifyDidChangeConfigurationAsync(new JObject
+            {
+                ["cvolo.codeLens.fields"] = true,
+                ["cvolo.codeLens.fieldReferences"] = true,
+                ["cvolo.codeLens.fieldLayout"] = true,
+            })
+            .WithTimeout("didChangeConfiguration");
+        await _session.Client.DrainNotificationsAsync();
+        await _session.Client.CodeLensAsync(Uri).WithTimeout("codeLens after configuration");
+        Assert.True(_backend.LastCodeLensOptions!.Members);
+        Assert.True(_backend.LastCodeLensOptions.FieldLayout);
+
+        await _session.Client
+            .NotifyDidChangeConfigurationAsync(new JObject { ["cvolo.codeLens.fields"] = false })
+            .WithTimeout("didChangeConfiguration");
+        await _session.Client.DrainNotificationsAsync();
+        await _session.Client.CodeLensAsync(Uri).WithTimeout("codeLens after the gate closes");
+        Assert.False(_backend.LastCodeLensOptions!.Members);
+        Assert.False(_backend.LastCodeLensOptions.FieldLayout);
+    }
+
+    [Theory]
+    [InlineData("decimal", "offset 4B | size 4B | align 4B | pad 3B before")]
+    [InlineData("hex", "offset 0x04 | size 0x04 | align 0x04 | pad 0x03 before")]
+    [InlineData("decimalAndHex", "offset 4B (0x04) | size 4B (0x04) | align 4B (0x04) | pad 3B (0x03) before")]
+    public async Task TheOffsetFormatRewritesTheFieldLensNotationWithoutChangingANumber(string format, string expected)
+    {
+        await StartAsync();
+        await OpenAsync();
+        _backend.CannedCodeLenses = [Field(18, 6, 4, 4, 4, 3)];
+
+        await _session.Client
+            .NotifyDidChangeConfigurationAsync(new JObject { ["cvolo.layout.offsetFormat"] = format })
+            .WithTimeout("didChangeConfiguration");
+        await _session.Client.DrainNotificationsAsync();
+
+        JArray? lenses = await _session.Client.CodeLensAsync(Uri).WithTimeout("codeLens");
+        Assert.Equal(expected, Assert.Single(lenses!)["command"]!["title"]!.Value<string>());
+    }
+
+    [Fact]
+    public async Task AnUnknownOffsetFormat_KeepsTheCurrentNotation()
+    {
+        await StartAsync();
+        await OpenAsync();
+        _backend.CannedCodeLenses = [Field(18, 6, 4, 4, 4, 3)];
+
+        await _session.Client
+            .NotifyDidChangeConfigurationAsync(new JObject { ["cvolo.layout.offsetFormat"] = "hexadecimal" })
+            .WithTimeout("didChangeConfiguration");
+        await _session.Client.DrainNotificationsAsync();
+
+        JArray? lenses = await _session.Client.CodeLensAsync(Uri).WithTimeout("codeLens");
+        Assert.Equal(
+            "offset 4B | size 4B | align 4B | pad 3B before",
+            Assert.Single(lenses!)["command"]!["title"]!.Value<string>());
+    }
+
+    [Fact]
+    public async Task ATypeLayoutLens_KeepsTheCompilerTitleRegardlessOfTheOffsetFormat()
+    {
+        await StartAsync();
+        await OpenAsync();
+        _backend.CannedCodeLenses =
+        [
+            new BackendCodeLensInfo(new TextSpan(4, 4), BackendCodeLensKind.Layout, "size 8B | align 4B | padding 3B"),
+        ];
+
+        await _session.Client
+            .NotifyDidChangeConfigurationAsync(new JObject { ["cvolo.layout.offsetFormat"] = "hex" })
+            .WithTimeout("didChangeConfiguration");
+        await _session.Client.DrainNotificationsAsync();
+
+        JArray? lenses = await _session.Client.CodeLensAsync(Uri).WithTimeout("codeLens");
+
+        // Only offsets have a notation. A size, an alignment and a padding total stay decimal byte
+        // counts, so the type summary is unchanged by the setting.
+        Assert.Equal("size 8B | align 4B | padding 3B", Assert.Single(lenses!)["command"]!["title"]!.Value<string>());
+    }
 }

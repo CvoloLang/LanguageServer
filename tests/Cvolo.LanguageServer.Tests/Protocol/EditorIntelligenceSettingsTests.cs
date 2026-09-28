@@ -20,6 +20,7 @@ public class EditorIntelligenceSettingsTests
         Assert.True(settings.CodeLens.References);
         Assert.True(settings.CodeLens.Layout);
         Assert.False(settings.CodeLens.Members);
+        Assert.False(settings.CodeLens.FieldLayout);
         Assert.True(settings.CodeLens.NativeInterop);
 
         Assert.True(settings.InlayHints.Types);
@@ -28,6 +29,114 @@ public class EditorIntelligenceSettingsTests
         Assert.False(settings.InlayHints.Layout);
         Assert.False(settings.InlayHints.EnumValues);
         Assert.False(settings.InlayHints.GenericArguments);
+
+        Assert.Equal(BackendOffsetFormat.Decimal, settings.Layout.OffsetFormat);
+        Assert.False(settings.Layout.ShowPaddingPercentage);
+        Assert.True(settings.Layout.AutoRefresh);
+    }
+
+    [Fact]
+    public void TheFieldLensMasterGate_OpensBothPerFieldKindsAndEachSubFlagCanVetoOne()
+    {
+        EditorIntelligenceSettings gate = EditorIntelligenceSettings.FromConfiguration(
+            new JObject
+            {
+                ["cvolo.codeLens.fields"] = true,
+                ["cvolo.codeLens.fieldReferences"] = true,
+                ["cvolo.codeLens.fieldLayout"] = true,
+            },
+            EditorIntelligenceSettings.Default);
+
+        Assert.True(gate.CodeLens.Members);
+        Assert.True(gate.CodeLens.FieldLayout);
+
+        EditorIntelligenceSettings referencesOnly = EditorIntelligenceSettings.FromConfiguration(
+            new JObject
+            {
+                ["cvolo.codeLens.fields"] = true,
+                ["cvolo.codeLens.fieldReferences"] = true,
+                ["cvolo.codeLens.fieldLayout"] = false,
+            },
+            EditorIntelligenceSettings.Default);
+
+        Assert.True(referencesOnly.CodeLens.Members);
+        Assert.False(referencesOnly.CodeLens.FieldLayout);
+
+        // The gate is what turns both off, so a reader who wants no per-field lens row does not have
+        // to know which two sub-settings exist.
+        EditorIntelligenceSettings none = EditorIntelligenceSettings.FromConfiguration(
+            new JObject { ["cvolo.codeLens.fields"] = false },
+            gate);
+
+        Assert.False(none.CodeLens.Members);
+        Assert.False(none.CodeLens.FieldLayout);
+    }
+
+    [Fact]
+    public void TheEarlierMembersKey_StillOpensTheFieldReferenceLens()
+    {
+        EditorIntelligenceSettings settings = EditorIntelligenceSettings.FromConfiguration(
+            new JObject { ["cvolo.codeLens.members"] = true },
+            EditorIntelligenceSettings.Default);
+
+        Assert.True(settings.CodeLens.Members);
+    }
+
+    [Fact]
+    public void ANewerSubSetting_WinsOverTheEarlierMembersKey()
+    {
+        EditorIntelligenceSettings settings = EditorIntelligenceSettings.FromConfiguration(
+            new JObject
+            {
+                ["cvolo.codeLens.members"] = true,
+                ["cvolo.codeLens.fieldReferences"] = false,
+            },
+            EditorIntelligenceSettings.Default);
+
+        Assert.False(settings.CodeLens.Members);
+    }
+
+    [Theory]
+    [InlineData("decimal", 0)]
+    [InlineData("hex", 1)]
+    [InlineData("decimalAndHex", 2)]
+    public void TheOffsetNotation_IsRead(string value, int expected)
+    {
+        EditorIntelligenceSettings settings = EditorIntelligenceSettings.FromConfiguration(
+            new JObject { ["cvolo.layout.offsetFormat"] = value },
+            EditorIntelligenceSettings.Default);
+
+        Assert.Equal((BackendOffsetFormat)expected, settings.Layout.OffsetFormat);
+    }
+
+    [Fact]
+    public void AnUnknownOrUntypedNotation_KeepsTheCurrentOne()
+    {
+        EditorIntelligenceSettings current = EditorIntelligenceSettings.FromConfiguration(
+            new JObject { ["cvolo.layout.offsetFormat"] = "hex" },
+            EditorIntelligenceSettings.Default);
+
+        Assert.Equal(
+            BackendOffsetFormat.Hex,
+            EditorIntelligenceSettings.FromConfiguration(new JObject { ["cvolo.layout.offsetFormat"] = "binary" }, current).Layout.OffsetFormat);
+        Assert.Equal(
+            BackendOffsetFormat.Hex,
+            EditorIntelligenceSettings.FromConfiguration(new JObject { ["cvolo.layout.offsetFormat"] = 2 }, current).Layout.OffsetFormat);
+    }
+
+    [Fact]
+    public void TheLayoutViewSettings_AreRead()
+    {
+        EditorIntelligenceSettings settings = EditorIntelligenceSettings.FromConfiguration(
+            new JObject
+            {
+                ["cvolo.layout.showPaddingPercentage"] = true,
+                ["cvolo.layout.autoRefresh"] = false,
+            },
+            EditorIntelligenceSettings.Default);
+
+        Assert.True(settings.Layout.ShowPaddingPercentage);
+        Assert.False(settings.Layout.AutoRefresh);
     }
 
     [Fact]

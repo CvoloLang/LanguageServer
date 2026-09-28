@@ -49,6 +49,7 @@ internal sealed class CodeLensHandler(
         }
 
         BackendCodeLensOptions options = settingsAccessor().CodeLens;
+        BackendOffsetFormat offsetFormat = settingsAccessor().Layout.OffsetFormat;
         IReadOnlyList<BackendCodeLensInfo> lenses;
         try
         {
@@ -84,7 +85,7 @@ internal sealed class CodeLensHandler(
         var mapped = new List<CodeLens>(ordered.Count);
         foreach (BackendCodeLensInfo lens in ordered)
         {
-            if (TryMapLens(lens, index, textLength, documentUriText, out CodeLens codeLens))
+            if (TryMapLens(lens, index, textLength, documentUriText, offsetFormat, out CodeLens codeLens))
             {
                 mapped.Add(codeLens);
             }
@@ -98,6 +99,7 @@ internal sealed class CodeLensHandler(
         LineIndex index,
         int textLength,
         string documentUriText,
+        BackendOffsetFormat offsetFormat,
         out CodeLens codeLens)
     {
         if (!SpanMapper.TryMapRange(index, textLength, lens.Range, out LspRange range))
@@ -110,13 +112,24 @@ internal sealed class CodeLensHandler(
         codeLens = new CodeLens
         {
             Range = range,
-            Command = MapCommand(lens, index, documentUriText),
+            Command = MapCommand(lens, PresentTitle(lens, offsetFormat), index, documentUriText),
         };
         return true;
     }
 
     /// <summary>
-    /// Builds the command a client presents. Its title is always the compiler's own text, because the
+    /// The text a reader sees. It is the compiler's own presentation, except for a field layout lens,
+    /// which is written again from the compiler's structured numbers when the reader asked for another
+    /// offset notation. Only the radix changes: the offset, size, alignment and padding are the ones
+    /// the compiler computed, so the lens and the detailed view can never disagree (§17).
+    /// </summary>
+    private static string PresentTitle(BackendCodeLensInfo lens, BackendOffsetFormat offsetFormat) =>
+        lens.FieldLayout is { } field
+            ? LayoutTextFormatter.FieldLayout(field, offsetFormat)
+            : lens.Title;
+
+    /// <summary>
+    /// Builds the command a client presents. Its title is always the text the reader sees, because the
     /// title is the only place a CodeLens can carry one; its identifier is the backend's command name
     /// when the lens is clickable, and empty when it is not (§11, §21, §39). A lens the compiler
     /// described but gave no behaviour to — an import or export linkage fact, say — is still worth
@@ -124,11 +137,11 @@ internal sealed class CodeLensHandler(
     /// clickable but whose position no longer exists in the captured text falls back to the same
     /// shape: a command that would open the wrong location is worse than a label that does nothing.
     /// </summary>
-    private Command? MapCommand(BackendCodeLensInfo lens, LineIndex index, string documentUriText)
+    private Command? MapCommand(BackendCodeLensInfo lens, string title, LineIndex index, string documentUriText)
     {
         if (lens.Command is not { } command)
         {
-            return new Command { Title = lens.Title, CommandIdentifier = string.Empty, Arguments = [] };
+            return new Command { Title = title, CommandIdentifier = string.Empty, Arguments = [] };
         }
 
         var arguments = new List<object>(command.Arguments.Count + 1) { documentUriText };
@@ -138,7 +151,7 @@ internal sealed class CodeLensHandler(
                 || !index.TryGetPosition(position.Position, out TextPosition mapped))
             {
                 logger.Debug($"[codeLens] presented the '{lens.Kind}' lens as text only: its position does not map to the captured text.");
-                return new Command { Title = lens.Title, CommandIdentifier = string.Empty, Arguments = [] };
+                return new Command { Title = title, CommandIdentifier = string.Empty, Arguments = [] };
             }
 
             arguments.Add(new
@@ -150,7 +163,7 @@ internal sealed class CodeLensHandler(
 
         return new Command
         {
-            Title = lens.Title,
+            Title = title,
             CommandIdentifier = command.Name,
             Arguments = [.. arguments],
         };

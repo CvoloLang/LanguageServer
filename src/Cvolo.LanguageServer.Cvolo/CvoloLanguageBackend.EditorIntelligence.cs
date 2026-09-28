@@ -97,6 +97,8 @@ internal sealed partial class CvoloLanguageBackend
 
             // The lens range is the declared name itself, so its start is a position the client's own
             // references/layout query can resolve without the adapter resolving anything (§11, §21).
+            // A field layout lens asks for the layout of the type that stores the field, which the
+            // server resolves from that same position, so no field identity is put in the arguments.
             var command = kind switch
             {
                 BackendCodeLensKind.References => new BackendCodeLensCommand(
@@ -108,10 +110,46 @@ internal sealed partial class CvoloLanguageBackend
                 _ => null,
             };
 
-            mapped.Add(new BackendCodeLensInfo(range, kind.Value, lens.Title, command));
+            BackendFieldLayoutInfo? fieldLayout = null;
+            if (lens.FieldLayout is { } field)
+            {
+                // A lens is an invitation to click, so one that cannot present its own numbers is
+                // dropped rather than shown in a notation the reader did not ask for.
+                fieldLayout = MapFieldLayout(field);
+                if (fieldLayout is null)
+                {
+                    continue;
+                }
+            }
+
+            mapped.Add(new BackendCodeLensInfo(range, kind.Value, lens.Title, command, fieldLayout));
         }
 
         return mapped;
+    }
+
+    /// <summary>
+    /// Copies the compiler's field storage facts, or returns nothing when the compiler reported a
+    /// value no table could show. The two callers differ on purpose: a lens disappears, while a hint
+    /// keeps the compiler's own text and only loses the payload.
+    /// </summary>
+    private BackendFieldLayoutInfo? MapFieldLayout(ToolingFieldLayoutInfo field)
+    {
+        if (field.Offset < 0 || field.Size < 0 || field.Alignment <= 0 || field.PaddingBefore < 0)
+        {
+            _logger.Write(
+                CoreLogLevel.Debug,
+                $"Dropped the field layout payload for '{field.FieldName}': the compiler reported an impossible offset, size, alignment or padding.");
+            return null;
+        }
+
+        return new BackendFieldLayoutInfo(
+            field.ContainingTypeDisplay,
+            field.FieldName,
+            field.Offset,
+            field.Size,
+            field.Alignment,
+            field.PaddingBefore);
     }
 
     /// <summary>
@@ -126,6 +164,7 @@ internal sealed partial class CvoloLanguageBackend
             References = effective.References,
             Layout = effective.Layout,
             Members = effective.Members,
+            FieldLayout = effective.FieldLayout,
             NativeInterop = effective.NativeInterop,
         };
     }
@@ -196,7 +235,10 @@ internal sealed partial class CvoloLanguageBackend
                 hint.Label,
                 hint.PaddingLeft,
                 hint.PaddingRight,
-                hint.RelatedSymbol is { } related ? new CvoloSymbolHandle(toolingSnapshot, related) : null));
+                hint.RelatedSymbol is { } related ? new CvoloSymbolHandle(toolingSnapshot, related) : null,
+                // A hint is text, not an invitation, so a payload that cannot be presented is simply
+                // left out and the compiler's own label still shows.
+                hint.FieldLayout is { } field ? MapFieldLayout(field) : null));
         }
 
         return mapped;

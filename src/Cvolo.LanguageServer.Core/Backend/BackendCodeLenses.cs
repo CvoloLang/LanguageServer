@@ -27,6 +27,19 @@ internal sealed record BackendCodeLensPositionArgument(int Position) : BackendCo
 internal sealed record BackendCodeLensCommand(string Name, IReadOnlyList<BackendCodeLensArgument> Arguments);
 
 /// <summary>
+/// Where one stored field sits inside its containing type, as the compiler's layout service computed
+/// it. The lens is anchored to the field's own declaration and the numbers are copied verbatim: the
+/// protocol layer formats them for the reader but never re-derives an offset, a size or a padding.
+/// </summary>
+internal sealed record BackendFieldLayoutInfo(
+    string ContainingTypeDisplay,
+    string FieldName,
+    long Offset,
+    long Size,
+    long Alignment,
+    long PaddingBefore);
+
+/// <summary>
 /// One editor-anchored annotation. <see cref="Range"/> is the line the lens renders above and
 /// <see cref="Title"/> is already-presented text: the backend never rephrases it client-side.
 /// </summary>
@@ -34,7 +47,8 @@ internal sealed record BackendCodeLensInfo(
     TextSpan Range,
     BackendCodeLensKind Kind,
     string Title,
-    BackendCodeLensCommand? Command = null);
+    BackendCodeLensCommand? Command = null,
+    BackendFieldLayoutInfo? FieldLayout = null);
 
 /// <summary>
 /// Which categories of CodeLens the caller wants. The defaults are the recommended settings: the
@@ -54,6 +68,12 @@ internal sealed record BackendCodeLensOptions
 
     /// <summary>Emit reference-count lenses for fields and enum variants too.</summary>
     public bool Members { get; init; }
+
+    /// <summary>
+    /// Emit a per-field layout lens (offset, size, alignment and the padding before the field) next
+    /// to every field whose containing type has an authoritative layout.
+    /// </summary>
+    public bool FieldLayout { get; init; }
 
     /// <summary>Emit lenses for declarations with resolved native linkage.</summary>
     public bool NativeInterop { get; init; } = true;

@@ -89,6 +89,57 @@ public class InlayHintHandlerTests : IDisposable
         Assert.Equal("genericArgument", hints[4]!["kind"]!.Value<string>());
     }
 
+    [Theory]
+    [InlineData("decimal", "offset 4 | size 4 | align 4 | pad 3 before")]
+    [InlineData("hex", "offset 0x04 | size 0x04 | align 0x04 | pad 0x03 before")]
+    [InlineData("decimalAndHex", "offset 4 (0x04) | size 4 (0x04) | align 4 (0x04) | pad 3 (0x03) before")]
+    public async Task AFieldLayoutHint_UsesTheSameOffsetNotationAsTheFieldLens(string format, string expected)
+    {
+        await StartAsync();
+        await OpenAsync();
+        _backend.CannedInlayHints =
+        [
+            new BackendInlayHint(
+                23,
+                BackendInlayHintKind.Layout,
+                "offset 4 | size 4 | align 4 | pad 3 before",
+                PaddingLeft: true,
+                FieldLayout: new BackendFieldLayoutInfo("Header", "Length", 4, 4, 4, 3)),
+        ];
+
+        await _session.Client
+            .NotifyDidChangeConfigurationAsync(new JObject { ["cvolo.layout.offsetFormat"] = format })
+            .WithTimeout("didChangeConfiguration");
+        await _session.Client.DrainNotificationsAsync();
+
+        JArray? hints = await _session.Client.InlayHintsAsync(Uri, Line(0, 24)).WithTimeout("inlayHint");
+
+        JToken hint = Assert.Single(hints!);
+        Assert.Equal(expected, hint["label"]!.Value<string>());
+        Assert.Equal("layout", hint["kind"]!.Value<string>());
+        Assert.True(hint["paddingLeft"]!.Value<bool>());
+    }
+
+    [Fact]
+    public async Task AFieldWithNoPrecedingPadding_ShowsNoPaddingFact()
+    {
+        await StartAsync();
+        await OpenAsync();
+        _backend.CannedInlayHints =
+        [
+            new BackendInlayHint(
+                4,
+                BackendInlayHintKind.Layout,
+                "offset 0 | size 8 | align 8",
+                PaddingLeft: true,
+                FieldLayout: new BackendFieldLayoutInfo("Header", "Kind", 0, 8, 8, 0)),
+        ];
+
+        JArray? hints = await _session.Client.InlayHintsAsync(Uri, Line(0, 24)).WithTimeout("inlayHint");
+
+        Assert.Equal("offset 0 | size 8 | align 8", Assert.Single(hints!)["label"]!.Value<string>());
+    }
+
     [Fact]
     public async Task Hints_AreOrderedByPosition()
     {

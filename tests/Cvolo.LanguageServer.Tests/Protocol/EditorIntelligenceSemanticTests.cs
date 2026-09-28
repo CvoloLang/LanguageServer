@@ -253,6 +253,143 @@ public class EditorIntelligenceSemanticTests : IDisposable
         Assert.NotNull(LensOn(lenses, "Pair", "size 8B | align 4B | padding 0B"));
     }
 
+    private async Task EnableFieldDecorationsAsync()
+    {
+        await _session.Client
+            .NotifyDidChangeConfigurationAsync(new JObject
+            {
+                ["cvolo.codeLens.fields"] = true,
+                ["cvolo.codeLens.fieldReferences"] = true,
+                ["cvolo.codeLens.fieldLayout"] = true,
+                ["cvolo.inlayHints.layout"] = true,
+            })
+            .WithTimeout("didChangeConfiguration");
+        await _session.Client.DrainNotificationsAsync();
+    }
+
+    [Fact]
+    public async Task FieldLenses_AreAbsentUntilTheyAreAskedFor()
+    {
+        await StartAsync();
+        await OpenAsync();
+
+        JArray lenses = await LensesAsync();
+
+        // One line per field is a deliberate choice, so nothing about a field changes until the
+        // reader asks for it. The declaration-level lenses are unaffected either way.
+        Assert.DoesNotContain(lenses, lens => TextOf(lens["range"]!) is "Kind" or "Length");
+        Assert.NotNull(LensOn(lenses, "Header", "0 references"));
+    }
+
+    [Fact]
+    public async Task FieldReferenceAndFieldLayoutLensesShareTheFieldLineInOrder()
+    {
+        await StartAsync();
+        await OpenAsync();
+        await EnableFieldDecorationsAsync();
+
+        JArray lenses = await EventuallyAsync(
+            () => _session.Client.CodeLensAsync(Uri),
+            answer => HasLensOn(answer, "Length", "offset 4B | size 4B | align 4B | pad 3B before"),
+            "field codeLens");
+
+        // `Length` is never referenced, so the count stays a visible zero rather than being hidden,
+        // and the compiler's storage facts sit beside it on the same line.
+        JToken length = LensOn(lenses, "Length", "offset 4B | size 4B | align 4B | pad 3B before");
+        Assert.NotNull(LensOn(lenses, "Length", "0 references"));
+        Assert.Equal("cvolo.showTypeLayout", length["command"]!["command"]!.Value<string>());
+
+        var expected = PositionOf(At("public int Length;") + "public int ".Length);
+        JArray arguments = Assert.IsType<JArray>(length["command"]!["arguments"]!);
+        Assert.Equal(expected.Line, arguments[1]!["line"]!.Value<int>());
+        Assert.Equal(expected.Character, arguments[1]!["character"]!.Value<int>());
+
+        // The first field starts the type, so it has no padding before it and says nothing about one.
+        Assert.NotNull(LensOn(lenses, "Kind", "offset 0B | size 1B | align 1B"));
+
+        // The order is deterministic: references, then layout, on the same anchored range.
+        var onLength = lenses
+            .Where(lens => TextOf(lens["range"]!) == "Length")
+            .Select(lens => Title(lens).Value<string>())
+            .ToArray();
+        Assert.Equal(["0 references", "offset 4B | size 4B | align 4B | pad 3B before"], onLength);
+    }
+
+    [Fact]
+    public async Task AFieldLayoutLensClick_ResolvesTheLayoutOfTheTypeThatStoresTheField()
+    {
+        await StartAsync();
+        await OpenAsync();
+
+        // The field is not a type, so the position the lens carries is resolved to the type that
+        // stores it. That is what the view opened by a field lens click shows.
+        var position = PositionOf(At("public int Length;") + "public int ".Length);
+        TypeLayoutResponse? layout = await EventuallyAsync(
+            () => _session.Client.TypeLayoutAsync(Uri, position.Line, position.Character),
+            answer => answer is not null && answer.TypeDisplay == "Header",
+            "cvolo/typeLayout at a field");
+
+        Assert.NotNull(layout);
+        Assert.Equal("Header", layout!.TypeDisplay);
+        Assert.Equal(8, layout.Size);
+        Assert.Equal(new[] { "Kind", "Length" }, layout.Members.Select(member => member.Name));
+    }
+
+    [Fact]
+    public async Task FieldLayoutInlayHint_ShowsTheOffsetSizeAlignmentAndPrecedingPadding()
+    {
+        await StartAsync();
+        await OpenAsync();
+        await EnableFieldDecorationsAsync();
+
+        JArray hints = await EventuallyAsync(
+            () => _session.Client.InlayHintsAsync(Uri, new LspRange
+            {
+                Start = new Position { Line = 0, Character = 0 },
+                End = new Position { Line = 5, Character = 0 },
+            }),
+            answer => answer.Any(hint => hint["kind"]!.Value<string>() == "layout" && hint["label"]!.Value<string>()!.Contains("pad", StringComparison.Ordinal)),
+            "field inlayHint");
+
+        // The hint is presentation only: it sits just after the declaration, changes nothing in the
+        // source, and repeats the padding that sits *before* the field, never the tail padding.
+        JToken length = hints.First(hint =>
+            hint["kind"]!.Value<string>() == "layout"
+            && hint["label"]!.Value<string>()!.StartsWith("offset 4 |", StringComparison.Ordinal));
+        Assert.Equal("offset 4 | size 4 | align 4 | pad 3 before", length["label"]!.Value<string>());
+        Assert.True(length["paddingLeft"]!.Value<bool>());
+
+        var expected = PositionOf(At("public int Length;") + "public int Length;".Length);
+        Assert.Equal(expected.Line, length["position"]!["line"]!.Value<int>());
+        Assert.Equal(expected.Character, length["position"]!["character"]!.Value<int>());
+
+        Assert.Contains(
+            hints,
+            hint => hint["kind"]!.Value<string>() == "layout" && hint["label"]!.Value<string>() == "offset 0 | size 1 | align 1");
+    }
+
+    [Fact]
+    public async Task TheOffsetFormatSetting_RewritesTheCompilerFieldNumbersWithoutChangingThem()
+    {
+        await StartAsync();
+        await OpenAsync();
+        await EnableFieldDecorationsAsync();
+
+        await _session.Client
+            .NotifyDidChangeConfigurationAsync(new JObject { ["cvolo.layout.offsetFormat"] = "hex" })
+            .WithTimeout("didChangeConfiguration");
+        await _session.Client.DrainNotificationsAsync();
+
+        JArray lenses = await EventuallyAsync(
+            () => _session.Client.CodeLensAsync(Uri),
+            answer => HasLensOn(answer, "Length", "offset 0x04 | size 0x04 | align 0x04 | pad 0x03 before"),
+            "hex field codeLens");
+
+        // Same compiler numbers, another notation. The type summary is untouched because a size, an
+        // alignment and a padding total are byte counts rather than offsets.
+        Assert.NotNull(LensOn(lenses, "Header", "size 8B | align 4B | padding 3B"));
+    }
+
     [Fact]
     public async Task TypeLayout_ReportsTheMembersOffsetsAndInternalPaddingOfTheTypeAtTheCursor()
     {
