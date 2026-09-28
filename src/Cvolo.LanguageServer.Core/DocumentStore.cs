@@ -540,6 +540,16 @@ internal sealed class DocumentStore(ILanguageBackend backend, ICoreLogger? logge
         return backend.GetTypeLayoutBySubject(context.CurrentProjectSnapshot, context.Document.BackendDocument, subject);
     }
 
+    /// <summary>
+    /// Returns the source declarations of the semantic type of the value or expression at
+    /// <paramref name="position"/> from the project snapshot captured for the request. Callers must
+    /// discard the result unless <see cref="IsCurrent(SemanticRequestContext)"/> still holds.
+    /// </summary>
+    public BackendDefinitionResult? GetTypeDefinitions(SemanticRequestContext context, int position)
+    {
+        return backend.GetTypeDefinitions(context.CurrentProjectSnapshot, context.Document.BackendDocument, position);
+    }
+
     /// <summary>Ties together the published state and the backend tokens that produced it.</summary>
     private sealed record DocumentEntry(DocumentState State, BackendProject Project, BackendDocumentHandle Handle);
 }

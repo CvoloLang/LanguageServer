@@ -236,4 +236,14 @@ internal interface ILanguageBackend
     /// </summary>
     BackendTypeLayoutInspection? GetTypeLayoutBySubject(BackendSnapshot snapshot, BackendDocumentHandle document, string subject)
         => null;
+
+    /// <summary>
+    /// Returns the source declarations of the semantic type of the value or expression at
+    /// <paramref name="position"/> (an absolute UTF-16 code-unit offset). This backs
+    /// textDocument/typeDefinition, which differs from textDocument/definition: a local resolves to
+    /// the type it stores rather than to the local's own declaration. The compiler's own type is the
+    /// only source; an unresolved or ambiguous position yields no target rather than a text guess (§2-§5).
+    /// </summary>
+    BackendDefinitionResult? GetTypeDefinitions(BackendSnapshot snapshot, BackendDocumentHandle document, int position)
+        => null;
 }

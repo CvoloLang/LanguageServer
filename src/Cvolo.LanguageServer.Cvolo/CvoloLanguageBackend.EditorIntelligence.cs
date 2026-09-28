@@ -370,6 +370,30 @@ internal sealed partial class CvoloLanguageBackend
         return layout is null ? null : MapTypeLayout((ToolingBackendSnapshot)snapshot, layout);
     }
 
+    public BackendDefinitionResult? GetTypeDefinitions(BackendSnapshot snapshot, BackendDocumentHandle document, int position)
+    {
+        DocumentSnapshot toolingDocument = RequireEditorDocument(snapshot, document, "type-definition");
+        RequirePosition(toolingDocument, position, "type-definition");
+
+        IReadOnlyList<SymbolDefinition> definitions = toolingDocument.GetTypeDefinitions(position);
+        if (definitions.Count == 0)
+        {
+            return null;
+        }
+
+        var texts = new Dictionary<DocumentUri, string>();
+        var targets = new List<BackendDefinitionTarget>(definitions.Count);
+        foreach (SymbolDefinition definition in definitions)
+        {
+            if (MapDefinitionTarget(snapshot, definition, texts) is { } target)
+            {
+                targets.Add(target);
+            }
+        }
+
+        return targets.Count == 0 ? null : new BackendDefinitionResult(texts, targets);
+    }
+
     private BackendTypeLayoutInspection? MapTypeLayout(BackendSnapshot snapshot, TypeLayoutInspection layout)
     {
         var texts = new Dictionary<DocumentUri, string>();

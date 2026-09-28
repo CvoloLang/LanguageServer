@@ -233,6 +233,14 @@ internal sealed class BlockingBackend : ILanguageBackend
     public BackendDefinitionResult CannedDefinitions { get; set; } =
         new(new Dictionary<DocumentUri, string>(), []);
 
+    /// <summary>The type definitions returned by <see cref="GetTypeDefinitions"/> (null means "none").</summary>
+    public BackendDefinitionResult? CannedTypeDefinitions { get; set; }
+
+    /// <summary>Number of times <see cref="GetTypeDefinitions"/> was called.</summary>
+    public int TypeDefinitionCalls => _typeDefinitionCalls;
+
+    private int _typeDefinitionCalls;
+
     /// <summary>The outline returned by <see cref="GetDocumentSymbols"/>.</summary>
     public IReadOnlyList<BackendDocumentSymbol> CannedSymbols { get; set; } = [];
 
@@ -265,6 +273,13 @@ internal sealed class BlockingBackend : ILanguageBackend
     {
         EnterNavigation();
         return CannedDefinitions;
+    }
+
+    public BackendDefinitionResult? GetTypeDefinitions(BackendSnapshot snapshot, BackendDocumentHandle document, int position)
+    {
+        Interlocked.Increment(ref _typeDefinitionCalls);
+        EnterNavigation();
+        return CannedTypeDefinitions;
     }
 
     public IReadOnlyList<BackendDocumentSymbol> GetDocumentSymbols(BackendSnapshot snapshot, BackendDocumentHandle document)

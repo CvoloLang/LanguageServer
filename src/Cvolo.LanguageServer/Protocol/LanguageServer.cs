@@ -31,6 +31,7 @@ internal sealed class LanguageServer(
     private SignatureHelpHandler? _signatureHelp;
     private HoverHandler? _hover;
     private DefinitionHandler? _definition;
+    private TypeDefinitionHandler? _typeDefinition;
     private DocumentSymbolHandler? _documentSymbols;
     private SemanticTokensHandler? _semanticTokens;
     private ReferencesHandler? _references;
@@ -98,6 +99,8 @@ internal sealed class LanguageServer(
     /// textDocument/definition handler.
     /// </summary>
     internal DefinitionHandler Definition => _definition ??= new DefinitionHandler(logger, () => Store);
+
+    internal TypeDefinitionHandler TypeDefinition => _typeDefinition ??= new TypeDefinitionHandler(logger, () => Store);
 
     /// <summary>
     /// textDocument/documentSymbol handler.
@@ -251,6 +254,7 @@ internal sealed class LanguageServer(
                 },
                 HoverProvider = true,
                 DefinitionProvider = true,
+                TypeDefinitionProvider = true,
                 ReferencesProvider = true,
                 RenameProvider = _state.PrepareRenameSupported ? (object)new RenameOptionsPayload(true) : true,
                 DocumentSymbolProvider = true,

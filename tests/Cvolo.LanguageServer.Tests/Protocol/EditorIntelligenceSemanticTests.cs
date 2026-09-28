@@ -658,4 +658,31 @@ public class EditorIntelligenceSemanticTests : IDisposable
             Assert.True(EndOf(levels[i]!["range"]!) >= EndOf(levels[i - 1]!["range"]!), "a parent must end no earlier than its child");
         }
     }
+
+    [Fact]
+    public async Task TypeDefinition_ResolvesTheDeclaredTypeWhileDefinitionKeepsTheDeclaration()
+    {
+        await StartAsync();
+        await OpenAsync();
+
+        // `val Vec v = Vec { X: 1, Y: 2 };` — the local is a name, not a type. The ordinary
+        // definition stays on the local declaration; the type definition leaves it for the struct.
+        var local = PositionOf(At("val Vec v = Vec") + "val Vec ".Length);
+        var structLine = PositionOf(At("public struct Vec")).Line;
+
+        Location[]? typeTargets = await EventuallyAsync(
+            () => _session.Client.TypeDefinitionAsync(Uri, local.Line, local.Character),
+            locations => locations is not null && locations.Length == 1 && locations[0].Range.Start.Line == structLine,
+            "textDocument/typeDefinition");
+
+        var typeTarget = Assert.Single(typeTargets!);
+        Assert.Equal(structLine, typeTarget.Range.Start.Line);
+
+        Location[]? definitions = await EventuallyAsync(
+            () => _session.Client.DefinitionAsync(Uri, local.Line, local.Character),
+            locations => locations is not null && locations.Length >= 1 && locations[0].Range.Start.Line == local.Line,
+            "textDocument/definition");
+
+        Assert.Equal(local.Line, definitions![0].Range.Start.Line);
+    }
 }

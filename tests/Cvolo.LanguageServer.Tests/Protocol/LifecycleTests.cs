@@ -41,6 +41,7 @@ public class LifecycleTests
 
         Assert.Equal(true, capabilities["hoverProvider"]?.Value<bool>());
         Assert.Equal(true, capabilities["definitionProvider"]?.Value<bool>());
+        Assert.Equal(true, capabilities["typeDefinitionProvider"]?.Value<bool>());
         Assert.Equal(true, capabilities["referencesProvider"]?.Value<bool>());
         Assert.Equal(true, capabilities["renameProvider"]?.Value<bool>());
         Assert.Equal(true, capabilities["documentSymbolProvider"]?.Value<bool>());
@@ -48,7 +49,6 @@ public class LifecycleTests
         // Unimplemented navigation capabilities remain absent (LSP-4 §7.1).
         Assert.Null(capabilities["workspaceSymbolProvider"]);
         Assert.Null(capabilities["declarationProvider"]);
-        Assert.Null(capabilities["typeDefinitionProvider"]);
         Assert.Null(capabilities["implementationProvider"]);
         Assert.Null(capabilities["semanticTokensProvider"]);
         Assert.Null(capabilities["codeActionProvider"]);

@@ -190,6 +190,13 @@ internal sealed class TestClient : IDisposable
             PositionParams(uri, line, character));
     }
 
+    public Task<Location[]?> TypeDefinitionAsync(Uri uri, int line, int character)
+    {
+        return _rpc.InvokeWithParameterObjectAsync<Location[]?>(
+            Methods.TextDocumentTypeDefinitionName,
+            PositionParams(uri, line, character));
+    }
+
     public Task<JArray?> DocumentSymbolAsync(Uri uri)
     {
         return _rpc.InvokeWithParameterObjectAsync<JArray?>(
