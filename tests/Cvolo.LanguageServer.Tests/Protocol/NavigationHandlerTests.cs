@@ -261,6 +261,22 @@ public class NavigationHandlerTests : IDisposable
     }
 
     [Fact]
+    public async Task DocumentSymbols_NamelessDeclaration_IsOmittedNotSent()
+    {
+        // The client rejects the whole outline if any symbol has a falsy name, so a half-typed
+        // declaration without a name is left out instead of breaking every symbol (§19.5).
+        const string source = "int () { return 0; }\nstruct Point { public int x; }\nint main() { return 0; }\n";
+        await InitializeAsync(hierarchical: true);
+        await OpenMainAsync(source);
+
+        JArray? symbols = await _session.Client.DocumentSymbolAsync(_workspace.DocumentUri("main.cvl")).WithTimeout("documentSymbol");
+
+        Assert.NotNull(symbols);
+        Assert.Contains(symbols!, symbol => symbol["name"]!.Value<string>() == "Point");
+        Assert.DoesNotContain(symbols!, symbol => string.IsNullOrWhiteSpace(symbol["name"]!.Value<string>()));
+    }
+
+    [Fact]
     public async Task Hover_WithDocComment_IncludesDocumentation()
     {
         const string source =

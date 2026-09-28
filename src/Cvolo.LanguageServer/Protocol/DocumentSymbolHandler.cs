@@ -93,6 +93,13 @@ internal sealed class DocumentSymbolHandler(ILspLogger logger, Func<DocumentStor
 
     private static DocumentSymbol? MapHierarchical(BackendDocumentSymbol symbol, LineIndex index, int textLength)
     {
+        // The LSP schema requires a non-empty name. A nameless symbol is omitted together with its
+        // subtree rather than sent, because the client rejects the entire response over one (§19.5).
+        if (string.IsNullOrWhiteSpace(symbol.Name))
+        {
+            return null;
+        }
+
         // A node with an invalid range or selection span and its whole subtree are
         // omitted; ranges are never clamped or repaired (§19.5).
         if (!TryMapRange(symbol.Range, index, textLength, out LspRange range)
@@ -129,7 +136,8 @@ internal sealed class DocumentSymbolHandler(ILspLogger logger, Func<DocumentStor
         string? containerName,
         List<SymbolInformation> output)
     {
-        if (TryMapRange(symbol.SelectionSpan, index, textLength, out LspRange selection))
+        if (!string.IsNullOrWhiteSpace(symbol.Name)
+            && TryMapRange(symbol.SelectionSpan, index, textLength, out LspRange selection))
         {
             output.Add(new SymbolInformation
             {
