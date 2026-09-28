@@ -222,7 +222,10 @@ public class EditorIntelligenceSemanticTests : IDisposable
 
         Assert.Equal("cvolo.showReferences", lens["command"]!["command"]!.Value<string>());
         JArray arguments = Assert.IsType<JArray>(lens["command"]!["arguments"]!);
-        Assert.Equal(Uri.LocalPath, arguments[0]!.Value<string>());
+
+        // The editor resolves this document before it can run the reference provider, so it must be
+        // the URI the client sent rather than a local path, which would parse as a "d:" scheme.
+        Assert.Equal(Uri.AbsoluteUri, arguments[0]!.Value<string>());
 
         var expected = PositionOf(At("int Twice(int value)") + "int ".Length);
         Assert.Equal(expected.Line, arguments[1]!["line"]!.Value<int>());
@@ -239,7 +242,7 @@ public class EditorIntelligenceSemanticTests : IDisposable
 
         // `byte Kind` + `int Length` is 5 payload bytes that the target aligns into 8, so the summary
         // must name the padding the compiler inserted rather than a size the client guessed.
-        JToken header = LensOn(lenses, "Header", "size 8 B · align 4 B · padding 3 B");
+        JToken header = LensOn(lenses, "Header", "size 8B | align 4B | padding 3B");
         Assert.Equal("cvolo.showTypeLayout", header["command"]!["command"]!.Value<string>());
         var expected = PositionOf(At("public struct Header") + "public struct ".Length);
         var arguments = Assert.IsType<JArray>(header["command"]!["arguments"]!);
@@ -247,7 +250,7 @@ public class EditorIntelligenceSemanticTests : IDisposable
         Assert.Equal(expected.Character, arguments[1]!["character"]!.Value<int>());
 
         // Zero padding is reported explicitly rather than hidden.
-        Assert.NotNull(LensOn(lenses, "Pair", "size 8 B · align 4 B · padding 0 B"));
+        Assert.NotNull(LensOn(lenses, "Pair", "size 8B | align 4B | padding 0B"));
     }
 
     [Fact]
