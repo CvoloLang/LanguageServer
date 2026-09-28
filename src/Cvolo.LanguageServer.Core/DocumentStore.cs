@@ -422,6 +422,15 @@ internal sealed class DocumentStore(ILanguageBackend backend, ICoreLogger? logge
         return backend.GetReferences(snapshot, symbol, includeDeclaration);
     }
 
+    /// <summary>
+    /// Returns the concrete places that satisfy a contract symbol against the captured project
+    /// snapshot. A handle from a foreign snapshot or a symbol that is not a contract yields no target.
+    /// </summary>
+    public BackendDefinitionResult? GetImplementations(BackendSnapshot snapshot, BackendSymbolHandle symbol)
+    {
+        return backend.GetImplementations(snapshot, symbol);
+    }
+
     public BackendRenamePreparation? PrepareRename(SemanticRequestContext context, int position)
     {
         return backend.PrepareRename(context.CurrentProjectSnapshot, context.Document.BackendDocument, position);

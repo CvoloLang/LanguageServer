@@ -60,6 +60,24 @@ public class EditorIntelligenceSemanticTests : IDisposable
         "int Twice(int value)\n" +
         "{\n" +
         "    return value * 2;\n" +
+        "}\n" +
+        "\n" +
+        "public interface IWidget\n" +
+        "{\n" +
+        "    int Size();\n" +
+        "}\n" +
+        "\n" +
+        "public struct Button\n" +
+        "{\n" +
+        "    public int Width;\n" +
+        "}\n" +
+        "\n" +
+        "public extension Button : IWidget\n" +
+        "{\n" +
+        "    public int Size()\n" +
+        "    {\n" +
+        "        return Width;\n" +
+        "    }\n" +
         "}\n";
 
     private static readonly string[] Lines = Source.Split('\n');
@@ -684,5 +702,26 @@ public class EditorIntelligenceSemanticTests : IDisposable
             "textDocument/definition");
 
         Assert.Equal(local.Line, definitions![0].Range.Start.Line);
+    }
+
+    [Fact]
+    public async Task Implementation_ResolvesTheExtensionThatConforms()
+    {
+        await StartAsync();
+        await OpenAsync();
+
+        // On the interface name, Go to Implementations leaves the declaration for the extension
+        // block that the compiler records as conforming, and lands on the extended type token.
+        var iface = PositionOf(At("public interface IWidget") + "public interface ".Length);
+        var extension = PositionOf(At("public extension Button") + "public extension ".Length);
+
+        Location[]? targets = await EventuallyAsync(
+            () => _session.Client.ImplementationAsync(Uri, iface.Line, iface.Character),
+            locations => locations is not null && locations.Length >= 1 && locations[0].Range.Start.Line == extension.Line,
+            "textDocument/implementation");
+
+        var target = Assert.Single(targets!);
+        Assert.Equal(extension.Line, target.Range.Start.Line);
+        Assert.Equal(extension.Character, target.Range.Start.Character);
     }
 }

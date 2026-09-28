@@ -394,6 +394,35 @@ internal sealed partial class CvoloLanguageBackend
         return targets.Count == 0 ? null : new BackendDefinitionResult(texts, targets);
     }
 
+    public BackendDefinitionResult? GetImplementations(BackendSnapshot snapshot, BackendSymbolHandle symbol)
+    {
+        var toolingSnapshot = ((ToolingBackendSnapshot)snapshot).Snapshot;
+        if (symbol is not CvoloSymbolHandle handle || !ReferenceEquals(handle.Snapshot, toolingSnapshot))
+        {
+            // A foreign or mismatched symbol handle must never resolve against the
+            // wrong snapshot; return no result rather than an unrelated contract (§15).
+            return null;
+        }
+
+        IReadOnlyList<ToolingImplementation> implementations = toolingSnapshot.GetImplementations(handle.SymbolId);
+        if (implementations.Count == 0)
+        {
+            return null;
+        }
+
+        var texts = new Dictionary<DocumentUri, string>();
+        var targets = new List<BackendDefinitionTarget>(implementations.Count);
+        foreach (ToolingImplementation implementation in implementations)
+        {
+            if (MapDefinitionTarget(snapshot, implementation.Definition, texts) is { } target)
+            {
+                targets.Add(target);
+            }
+        }
+
+        return targets.Count == 0 ? null : new BackendDefinitionResult(texts, targets);
+    }
+
     private BackendTypeLayoutInspection? MapTypeLayout(BackendSnapshot snapshot, TypeLayoutInspection layout)
     {
         var texts = new Dictionary<DocumentUri, string>();

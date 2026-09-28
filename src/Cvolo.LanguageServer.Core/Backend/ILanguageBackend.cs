@@ -246,4 +246,16 @@ internal interface ILanguageBackend
     /// </summary>
     BackendDefinitionResult? GetTypeDefinitions(BackendSnapshot snapshot, BackendDocumentHandle document, int position)
         => null;
+
+    /// <summary>
+    /// Returns the concrete places that satisfy the contract named by <paramref name="symbol"/> from
+    /// the same immutable <paramref name="snapshot"/>: the extension blocks that implement an
+    /// interface (or one of its members), and the concrete types that conform to a protocol (or
+    /// provide one of its members) by the compiler's own conformance rules. This backs
+    /// textDocument/implementation; structural protocol conformance is decided by the compiler, never
+    /// inferred from method names. A symbol that is not a contract, or a contract with no
+    /// implementation, yields no target (§6-§11).
+    /// </summary>
+    BackendDefinitionResult? GetImplementations(BackendSnapshot snapshot, BackendSymbolHandle symbol)
+        => null;
 }

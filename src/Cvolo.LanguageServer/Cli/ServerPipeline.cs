@@ -88,6 +88,11 @@ internal static class ServerPipeline
             MethodNameTransform = m => m.Length == 0 ? m : char.ToLowerInvariant(m[0]) + m.Substring(1),
             UseSingleObjectParameterDeserialization = true,
         });
+        rpc.AddLocalRpcTarget(server.Implementation, new JsonRpcTargetOptions
+        {
+            MethodNameTransform = m => m.Length == 0 ? m : char.ToLowerInvariant(m[0]) + m.Substring(1),
+            UseSingleObjectParameterDeserialization = true,
+        });
         rpc.AddLocalRpcTarget(server.DocumentSymbols, new JsonRpcTargetOptions
         {
             MethodNameTransform = m => m.Length == 0 ? m : char.ToLowerInvariant(m[0]) + m.Substring(1),

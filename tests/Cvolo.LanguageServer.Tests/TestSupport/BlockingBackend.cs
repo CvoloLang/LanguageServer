@@ -282,6 +282,21 @@ internal sealed class BlockingBackend : ILanguageBackend
         return CannedTypeDefinitions;
     }
 
+    /// <summary>The implementations returned by <see cref="GetImplementations"/> (null means "none").</summary>
+    public BackendDefinitionResult? CannedImplementations { get; set; }
+
+    /// <summary>Number of times <see cref="GetImplementations"/> was called.</summary>
+    public int ImplementationCalls => _implementationCalls;
+
+    private int _implementationCalls;
+
+    public BackendDefinitionResult? GetImplementations(BackendSnapshot snapshot, BackendSymbolHandle symbol)
+    {
+        Interlocked.Increment(ref _implementationCalls);
+        EnterNavigation();
+        return CannedImplementations;
+    }
+
     public IReadOnlyList<BackendDocumentSymbol> GetDocumentSymbols(BackendSnapshot snapshot, BackendDocumentHandle document)
     {
         EnterNavigation();

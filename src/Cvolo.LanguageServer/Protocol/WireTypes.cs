@@ -31,6 +31,8 @@ internal sealed record ServerCapabilities
 
     public bool? TypeDefinitionProvider { get; init; }
 
+    public bool? ImplementationProvider { get; init; }
+
     public bool? ReferencesProvider { get; init; }
 
     public object? RenameProvider { get; init; }

@@ -62,6 +62,7 @@ internal sealed class ServerHost : IDisposable
         AddTarget(rpc, server.Hover);
         AddTarget(rpc, server.Definition);
         AddTarget(rpc, server.TypeDefinition);
+        AddTarget(rpc, server.Implementation);
         AddTarget(rpc, server.DocumentSymbols);
         AddTarget(rpc, server.SemanticTokens);
         AddTarget(rpc, server.SignatureHelp);
