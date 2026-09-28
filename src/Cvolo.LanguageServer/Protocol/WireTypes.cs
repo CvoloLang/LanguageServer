@@ -531,14 +531,17 @@ internal sealed record SelectionRangePayload
 
 /// <summary>
 /// Server-side shape of the <c>cvolo/typeLayout</c> request params. The client asks for the
-/// detailed layout of the type at one position; the extension renders the response and never
-/// derives an offset, a size, an alignment or a padding run itself (§22, §57).
+/// detailed layout of the type at one position, or asks again for a subject it stored earlier when
+/// refreshing an open view; the extension renders the response and never derives an offset, a size,
+/// an alignment or a padding run itself (§22, §42, §57).
 /// </summary>
 internal sealed class TypeLayoutParamsPayload
 {
     public TextDocumentIdentifier? TextDocument { get; init; }
 
     public Position? Position { get; init; }
+
+    public string? Subject { get; init; }
 }
 
 /// <summary>
@@ -558,7 +561,8 @@ internal sealed record TypeLayoutResponse(
     long? ElementAlignment,
     TypeLayoutMemberResponse[] Members,
     TypeLayoutPaddingResponse[] Padding,
-    Location? Definition = null);
+    Location? Definition = null,
+    string? Subject = null);
 
 /// <summary>One member's placement inside its type. A union's members share one offset.</summary>
 internal sealed record TypeLayoutMemberResponse(

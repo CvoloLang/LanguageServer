@@ -494,6 +494,40 @@ public class EditorIntelligenceSemanticTests : IDisposable
     }
 
     [Fact]
+    public async Task AnOpenLayoutRefreshesBySubjectAfterTheTypeChanges()
+    {
+        await StartAsync();
+        await OpenAsync();
+
+        var position = PositionOf(At("public struct Header") + "public struct ".Length);
+        TypeLayoutResponse? opened = await EventuallyAsync(
+            () => _session.Client.TypeLayoutAsync(Uri, position.Line, position.Character),
+            answer => answer is not null && answer.TypeDisplay == "Header",
+            "cvolo/typeLayout");
+        Assert.NotNull(opened);
+        Assert.Equal("Header", opened!.Subject);
+        Assert.Equal(8, opened.Size);
+
+        // The reader edits the type. An open view keeps only the subject, so it re-asks and is given
+        // the compiler's new numbers rather than the ones it was first shown (§28, §29, §55).
+        var edited = Source.Replace(
+            "    public int Length;\n",
+            "    public int Length;\n    public int Extra;\n",
+            StringComparison.Ordinal);
+        await _session.Client
+            .NotifyDidChangeAsync(Uri, 2, new TextDocumentContentChangeEvent { Text = edited })
+            .WithTimeout("didChange");
+
+        TypeLayoutResponse? refreshed = await EventuallyAsync(
+            () => _session.Client.TypeLayoutBySubjectAsync(Uri, "Header"),
+            answer => answer is not null && answer.Size == 12,
+            "refreshed cvolo/typeLayout by subject");
+        Assert.NotNull(refreshed);
+        Assert.Equal("Header", refreshed!.Subject);
+        Assert.Equal(new[] { "Kind", "Length", "Extra" }, refreshed.Members.Select(member => member.Name));
+    }
+
+    [Fact]
     public async Task InlayHints_ReportInferredTypesAndTheParameterAnArgumentBindsTo()
     {
         await StartAsync();

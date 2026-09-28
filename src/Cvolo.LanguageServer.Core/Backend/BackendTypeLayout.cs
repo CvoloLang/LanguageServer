@@ -56,6 +56,11 @@ internal sealed record BackendTypeLayoutPadding(long Offset, long Size, BackendT
 /// Navigation targets are character spans against a document the client may not have open, so the
 /// handler needs the text to turn a span into a line/character location, exactly as definitions do.
 /// </param>
+/// <param name="Subject">
+/// The canonical identity of the inspected type, which a client stores so it can ask for the same
+/// layout again after the project changes. It names the type rather than a snapshot-scoped symbol,
+/// so a type that was renamed or removed stops resolving instead of resurrecting stale numbers.
+/// </param>
 internal sealed record BackendTypeLayoutInspection(
     string TypeDisplay,
     string TargetDisplay,
@@ -70,4 +75,5 @@ internal sealed record BackendTypeLayoutInspection(
     IReadOnlyList<BackendTypeLayoutMember> Members,
     IReadOnlyList<BackendTypeLayoutPadding> Padding,
     BackendDefinitionTarget? Definition = null,
-    IReadOnlyDictionary<DocumentUri, string>? DocumentTexts = null);
+    IReadOnlyDictionary<DocumentUri, string>? DocumentTexts = null,
+    string? Subject = null);

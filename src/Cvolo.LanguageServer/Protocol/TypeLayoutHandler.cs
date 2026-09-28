@@ -24,9 +24,20 @@ internal sealed class TypeLayoutHandler(ILspLogger logger, Func<DocumentStore> s
     [JsonRpcMethod("cvolo/typeLayout", UseSingleObjectParameterDeserialization = true)]
     public async Task<TypeLayoutResponse?> TypeLayout(TypeLayoutParamsPayload? parameters, CancellationToken cancellationToken)
     {
-        if (parameters?.TextDocument is not { } textDocument || parameters.Position is not { } position)
+        if (parameters?.TextDocument is not { } textDocument)
         {
-            logger.Debug("[typeLayout] request without a textDocument or position; ignored.");
+            logger.Debug("[typeLayout] request without a textDocument; ignored.");
+            return null;
+        }
+
+        // A request names the type either by a source position (the first look) or by the subject the
+        // previous answer returned (a refresh). Either way the text document anchors the project whose
+        // snapshot the compiler resolves against (§42).
+        string? subject = string.IsNullOrWhiteSpace(parameters.Subject) ? null : parameters.Subject;
+        Position? position = parameters.Position;
+        if (subject is null && position is null)
+        {
+            logger.Debug("[typeLayout] request without a position or subject; ignored.");
             return null;
         }
 
@@ -45,17 +56,24 @@ internal sealed class TypeLayoutHandler(ILspLogger logger, Func<DocumentStore> s
             return null;
         }
 
-        var index = new LineIndex(context.Document.Text);
-        if (!index.TryGetOffset(new TextPosition(position.Line, position.Character), out int offset))
-        {
-            logger.Debug($"[typeLayout] the position does not map to the captured text of '{documentUri}'.");
-            return null;
-        }
-
         BackendTypeLayoutInspection? layout;
         try
         {
-            layout = await Task.Run(() => Store.GetTypeLayoutAtPosition(context, offset), cancellationToken).ConfigureAwait(false);
+            if (subject is not null)
+            {
+                layout = await Task.Run(() => Store.GetTypeLayoutBySubject(context, subject), cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                var index = new LineIndex(context.Document.Text);
+                if (!index.TryGetOffset(new TextPosition(position!.Line, position.Character), out int offset))
+                {
+                    logger.Debug($"[typeLayout] the position does not map to the captured text of '{documentUri}'.");
+                    return null;
+                }
+
+                layout = await Task.Run(() => Store.GetTypeLayoutAtPosition(context, offset), cancellationToken).ConfigureAwait(false);
+            }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -112,7 +130,8 @@ internal sealed class TypeLayoutHandler(ILspLogger logger, Func<DocumentStore> s
             layout.ElementAlignment,
             members,
             padding,
-            MapLocation(layout.Definition, texts, indexes));
+            MapLocation(layout.Definition, texts, indexes),
+            layout.Subject);
     }
 
     private static readonly IReadOnlyDictionary<DocumentUri, string> EmptyTexts =

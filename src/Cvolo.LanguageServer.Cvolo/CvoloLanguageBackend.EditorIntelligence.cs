@@ -363,6 +363,13 @@ internal sealed partial class CvoloLanguageBackend
         return layout is null ? null : MapTypeLayout((ToolingBackendSnapshot)snapshot, layout);
     }
 
+    public BackendTypeLayoutInspection? GetTypeLayoutBySubject(BackendSnapshot snapshot, BackendDocumentHandle document, string subject)
+    {
+        DocumentSnapshot toolingDocument = RequireEditorDocument(snapshot, document, "type-layout");
+        TypeLayoutInspection? layout = toolingDocument.GetTypeLayoutBySubject(subject);
+        return layout is null ? null : MapTypeLayout((ToolingBackendSnapshot)snapshot, layout);
+    }
+
     private BackendTypeLayoutInspection? MapTypeLayout(BackendSnapshot snapshot, TypeLayoutInspection layout)
     {
         var texts = new Dictionary<DocumentUri, string>();
@@ -431,7 +438,8 @@ internal sealed partial class CvoloLanguageBackend
             members,
             padding,
             MapDefinitionTarget(snapshot, layout.Definition, texts),
-            texts);
+            texts,
+            layout.Subject);
     }
 
     /// <summary>

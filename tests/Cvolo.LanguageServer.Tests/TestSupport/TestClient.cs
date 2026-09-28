@@ -341,6 +341,32 @@ internal sealed class TestClient : IDisposable
             });
     }
 
+    /// <summary>
+    /// Re-asks for a layout by the subject the server handed out, which is how the view refreshes
+    /// after the project changes (§28, §42).
+    /// </summary>
+    public Task<TypeLayoutResponse?> TypeLayoutBySubjectAsync(Uri uri, string subject)
+    {
+        return _rpc.InvokeWithParameterObjectAsync<TypeLayoutResponse?>(
+            "cvolo/typeLayout",
+            new TypeLayoutParamsPayload
+            {
+                TextDocument = new TextDocumentIdentifier { Uri = uri },
+                Subject = subject,
+            });
+    }
+
+    public Task<JObject?> TypeLayoutBySubjectJsonAsync(Uri uri, string subject)
+    {
+        return _rpc.InvokeWithParameterObjectAsync<JObject?>(
+            "cvolo/typeLayout",
+            new TypeLayoutParamsPayload
+            {
+                TextDocument = new TextDocumentIdentifier { Uri = uri },
+                Subject = subject,
+            });
+    }
+
     public Task NotifyDidChangeConfigurationAsync(JObject? settings)
     {
         return _rpc.NotifyAsync("workspace/didChangeConfiguration", new global::Cvolo.LanguageServer.Protocol.DidChangeConfigurationParams { Settings = settings });

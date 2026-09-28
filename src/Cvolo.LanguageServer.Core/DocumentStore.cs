@@ -530,6 +530,16 @@ internal sealed class DocumentStore(ILanguageBackend backend, ICoreLogger? logge
         return backend.GetTypeLayoutAtPosition(context.CurrentProjectSnapshot, context.Document.BackendDocument, position);
     }
 
+    /// <summary>
+    /// Returns the object layout of the type named by <paramref name="subject"/>, re-resolved against
+    /// the project snapshot captured for the request, or null when the subject no longer names a type.
+    /// Callers must discard the result unless <see cref="IsCurrent(SemanticRequestContext)"/> still holds.
+    /// </summary>
+    public BackendTypeLayoutInspection? GetTypeLayoutBySubject(SemanticRequestContext context, string subject)
+    {
+        return backend.GetTypeLayoutBySubject(context.CurrentProjectSnapshot, context.Document.BackendDocument, subject);
+    }
+
     /// <summary>Ties together the published state and the backend tokens that produced it.</summary>
     private sealed record DocumentEntry(DocumentState State, BackendProject Project, BackendDocumentHandle Handle);
 }

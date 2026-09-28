@@ -226,4 +226,14 @@ internal interface ILanguageBackend
     /// </summary>
     BackendTypeLayoutInspection? GetTypeLayoutAtPosition(BackendSnapshot snapshot, BackendDocumentHandle document, int position)
         => null;
+
+    /// <summary>
+    /// Returns the complete object layout of the type named by <paramref name="subject"/>, re-resolved
+    /// against the current snapshot, or null when the subject no longer names a type the compiler can
+    /// lay out. This is the refresh path: a client that stored a subject asks again after the project
+    /// changes, and a renamed or removed type becomes unavailable instead of showing stale numbers
+    /// (§27, §28, §42).
+    /// </summary>
+    BackendTypeLayoutInspection? GetTypeLayoutBySubject(BackendSnapshot snapshot, BackendDocumentHandle document, string subject)
+        => null;
 }

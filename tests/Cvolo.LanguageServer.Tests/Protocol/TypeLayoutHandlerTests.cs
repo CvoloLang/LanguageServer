@@ -360,6 +360,54 @@ public class TypeLayoutHandlerTests : IDisposable
     }
 
     [Fact]
+    public async Task RefreshingBySubject_KeepsTheCompilerNumbersAndAsksForTheSameType()
+    {
+        await StartAsync();
+        await OpenAsync();
+
+        // The client stores the subject the first response handed out and re-asks with it. The server
+        // re-resolves it against the current snapshot; the handler does not need a position (§28, §42).
+        _backend.CannedSubjectLayout = Record() with { Subject = "Point" };
+
+        JObject? layout = await _session.Client.TypeLayoutBySubjectJsonAsync(Uri, "Point").WithTimeout("cvolo/typeLayout by subject");
+
+        Assert.NotNull(layout);
+        Assert.Equal("Point", layout!["subject"]!.Value<string>());
+        Assert.Equal(24, layout["size"]!.Value<long>());
+        Assert.Equal(8, layout["alignment"]!.Value<long>());
+        Assert.Equal("Point", _backend.LastTypeLayoutSubject);
+    }
+
+    [Fact]
+    public async Task ASubjectThatNoLongerNamesAType_IsUnavailableRatherThanStale()
+    {
+        await StartAsync();
+        await OpenAsync();
+
+        // The type was renamed or removed, so the server resolves nothing and the client shows the
+        // unavailable state instead of numbers that no longer describe the program (§30).
+        _backend.CannedSubjectLayout = null;
+
+        Assert.Null(await _session.Client.TypeLayoutBySubjectAsync(Uri, "Renamed").WithTimeout("cvolo/typeLayout by subject"));
+    }
+
+    [Fact]
+    public async Task ASubjectRequestWithoutAPosition_StillRequiresTheDocumentThatAnchorsIt()
+    {
+        await StartAsync();
+        await OpenAsync();
+
+        // The subject is only meaningful inside a project, so the request still names the document
+        // whose snapshot resolves it (§42).
+        _backend.CannedSubjectLayout = Record() with { Subject = "Point" };
+
+        JObject? layout = await _session.Client.TypeLayoutBySubjectJsonAsync(Uri, "Point").WithTimeout("cvolo/typeLayout by subject");
+
+        Assert.NotNull(layout);
+        Assert.Equal("Point", layout!["typeDisplay"]!.Value<string>());
+    }
+
+    [Fact]
     public async Task BackendException_IsContained_AndNextRequestSucceeds()
     {
         await StartAsync();

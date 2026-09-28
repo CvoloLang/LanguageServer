@@ -402,6 +402,15 @@ internal sealed class BlockingBackend : ILanguageBackend
     /// <summary>When set, replaces the canned layout; used to feed malformed layouts.</summary>
     public Func<BackendTypeLayoutInspection?>? TypeLayoutFactory { get; set; }
 
+    /// <summary>The layout returned by <see cref="GetTypeLayoutBySubject"/>; null means unavailable.</summary>
+    public BackendTypeLayoutInspection? CannedSubjectLayout { get; set; }
+
+    /// <summary>When set, replaces the canned subject layout.</summary>
+    public Func<BackendTypeLayoutInspection?>? SubjectLayoutFactory { get; set; }
+
+    /// <summary>The subject the last <see cref="GetTypeLayoutBySubject"/> call received.</summary>
+    public string? LastTypeLayoutSubject { get; private set; }
+
     /// <summary>Arms the next editor-intelligence call to block until <see cref="ReleaseEditorIntelligence"/>.</summary>
     public void ArmEditorIntelligence()
     {
@@ -475,6 +484,14 @@ internal sealed class BlockingBackend : ILanguageBackend
         Interlocked.Increment(ref TypeLayoutCalls);
         EnterEditorIntelligence();
         return TypeLayoutFactory is { } factory ? factory() : CannedTypeLayout;
+    }
+
+    public BackendTypeLayoutInspection? GetTypeLayoutBySubject(BackendSnapshot snapshot, BackendDocumentHandle document, string subject)
+    {
+        Interlocked.Increment(ref TypeLayoutCalls);
+        LastTypeLayoutSubject = subject;
+        EnterEditorIntelligence();
+        return SubjectLayoutFactory is { } factory ? factory() : CannedSubjectLayout;
     }
 
     private sealed class FakeProject : BackendProject
