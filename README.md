@@ -70,6 +70,6 @@ and/or the optional log file.
 
 ## Versioning
 
-- Server version comes from the `Version` MSBuild property (0.0.21-alpha.0).
+- Server version comes from the `Version` MSBuild property (0.1.0-alpha.8).
 - Tooling version comes from `tooling.version`.
 - `--version` prints all three version components and works without a tooling bundle present.

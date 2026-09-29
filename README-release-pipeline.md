@@ -14,13 +14,13 @@ This patch is based on the supplied LSP-2 repository snapshot:
 Set `Directory.Build.props` to the release version, for example:
 
 ```xml
-<Version>0.0.21-alpha.0</Version>
+<Version>0.1.0-alpha.8</Version>
 ```
 
 Commit, then create/push:
 
 ```text
-v0.0.21-alpha.0
+v0.1.0-alpha.8
 ```
 
 `release.yml` requires the tag without its leading `v` to equal `<Version>`.
