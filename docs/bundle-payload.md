@@ -18,8 +18,8 @@ The sidecar is named for the archive **without** its extension, so it is never
 ambiguous which platform it belongs to:
 
 ```
-cvolo-language-server-0.1.0-alpha.11-win-x64.zip
-cvolo-language-server-0.1.0-alpha.11-win-x64.manifest.sha256
+cvolo-language-server-0.1.0-alpha.12-win-x64.zip
+cvolo-language-server-0.1.0-alpha.12-win-x64.manifest.sha256
 ```
 
 ```
@@ -31,7 +31,7 @@ Extracted contents:
 ```
 cvolo-language-server[.exe]     the entrypoint: one self-contained single-file build
 bundle-manifest.json            the manifest described below
-<the complete pinned tooling bundle, verbatim, 54 files for 0.0.21.0>
+<the complete pinned tooling bundle, verbatim, 54 files for 0.0.21.1>
   tooling.manifest.json
   SHA256SUMS.txt
   Cvolo.Compiler.Tooling.dll     the only compile-time dependency
@@ -50,7 +50,7 @@ application base directory at runtime. Deleting the side files produces a server
 starts and then cannot compile anything, which is why the payload is mandatory and
 verified rather than optional.
 
-The pinned `0.0.21.0` bundle is managed assemblies, standard-library sources and
+The pinned `0.0.21.1` bundle is managed assemblies, standard-library sources and
 docs. It contains **no compiler executable**, and the server never launches one:
 diagnostics, completion, hover, navigation, rename, semantic tokens, type hierarchy,
 type layout and code actions are all served in-process through `Compiler.Tooling`.
@@ -70,9 +70,9 @@ sorted, so the same inputs always produce a byte-identical manifest.
 ```json
 {
   "schemaVersion": 2,
-  "languageServerVersion": "0.1.0-alpha.11",
+  "languageServerVersion": "0.1.0-alpha.12",
   "languageServerCommit": "<40-character SHA>",
-  "toolingVersion": "0.0.21.0",
+  "toolingVersion": "0.0.21.1",
   "toolingCommit": "<40-character SHA>",
   "compilerCompatibilityLine": "0.0.21",
   "rid": "win-x64",

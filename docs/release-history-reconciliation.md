@@ -16,7 +16,7 @@ bundle manifest. They are deliberately not the same value.
 | Identity | Meaning |
 | --- | --- |
 | `LanguageServerVersion` | Independent product SemVer for the Language Server itself (`0.1.0-alpha.N`). |
-| `ToolingVersion` | Exact pinned tooling version (`0.0.21.0`) plus its commit. |
+| `ToolingVersion` | Exact pinned tooling version (`0.0.21.1`) plus its commit. |
 | `CompilerCompatibilityLine` | Compatibility metadata describing which compiler line the tooling targets (`0.0.21`). |
 
 The Language Server no longer derives its own version from the compiler/tooling

@@ -7,8 +7,8 @@ derives the LanguageServer product version from the compiler or the tooling.
 
 | Identity | Source of truth | Current value | Meaning |
 | --- | --- | --- | --- |
-| `languageServerVersion` | `Directory.Build.props` -> `<Version>` | `0.1.0-alpha.11` | The LanguageServer product version. This is what the tag, the release and the VS Code extension refer to. |
-| `toolingVersion` | `tooling.version` | `0.0.21.0` | The exact pinned `Cvolo.Compiler.Tooling` revision this release is built against. |
+| `languageServerVersion` | `Directory.Build.props` -> `<Version>` | `0.1.0-alpha.12` | The LanguageServer product version. This is what the tag, the release and the VS Code extension refer to. |
+| `toolingVersion` | `tooling.version` | `0.0.21.1` | The exact pinned `Cvolo.Compiler.Tooling` revision this release is built against. |
 | `compilerCompatibilityLine` | `compiler-compatibility.version` | `0.0.21` | The compiler line this LanguageServer release supports. |
 
 `toolingVersion` and `compilerCompatibilityLine` are **compatibility metadata**, not
@@ -30,8 +30,9 @@ The LanguageServer product series is independent and monotonically increasing:
 0.1.0-alpha.8    historical
 0.1.0-alpha.9    tag exists; its release workflow failed, the version is consumed
 0.1.0-alpha.10   tag exists; the release job failed, the version is consumed
-0.1.0-alpha.11   <- current
-0.1.0-alpha.12
+0.1.0-alpha.11   released; published and independently verified
+0.1.0-alpha.12   <- current
+0.1.0-alpha.13
 ...
 0.1.0-beta.0
 0.1.0-beta.1
@@ -85,13 +86,13 @@ the compiler line. A compiler-line change does not rename the branch.
 
 ```
 $ cvolo-language-server --version
-Cvolo Language Server 0.1.0-alpha.11
+Cvolo Language Server 0.1.0-alpha.12
 Commit: 0000000000000000000000000000000000000000
-Tooling: 0.0.21.0
+Tooling: 0.0.21.1
 Compiler compatibility: 0.0.21
 
 $ cvolo-language-server --version --json
-{"languageServerVersion":"0.1.0-alpha.11","languageServerCommit":"...","toolingVersion":"0.0.21.0","toolingCommit":"...","compilerCompatibilityLine":"0.0.21","rid":"win-x64","targetFramework":"net10.0","runtimeVersion":"10.0.12"}
+{"languageServerVersion":"0.1.0-alpha.12","languageServerCommit":"...","toolingVersion":"0.0.21.1","toolingCommit":"...","compilerCompatibilityLine":"0.0.21","rid":"win-x64","targetFramework":"net10.0","runtimeVersion":"10.0.12"}
 ```
 
 `--version --json` is the machine-readable form and uses exactly the field names of

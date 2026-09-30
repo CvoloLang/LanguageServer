@@ -40,7 +40,7 @@ public class DiagnosticPublicationTests : IDisposable
         var diagnostic = (JObject)latest.Diagnostics[0];
         Assert.Equal(1, diagnostic["severity"]!.Value<int>());
         Assert.Equal("cvolo", diagnostic["source"]!.Value<string>());
-        Assert.Equal("CVL0000", diagnostic["code"]!.Value<string>());
+        Assert.Equal("CVL4173", diagnostic["code"]!.Value<string>());
     }
 
     [Fact]

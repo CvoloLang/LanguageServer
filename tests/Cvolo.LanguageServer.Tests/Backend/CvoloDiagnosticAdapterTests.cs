@@ -51,7 +51,7 @@ public class CvoloDiagnosticAdapterTests : IDisposable
         BackendDiagnostic diagnostic = Assert.Single(_backend.GetDiagnostics(snapshot, [handle]).Diagnostics);
 
         Assert.Equal(BackendDiagnosticSeverity.Error, diagnostic.Severity);
-        Assert.Equal("CVL0000", diagnostic.Code);
+        Assert.Equal("CVL4173", diagnostic.Code);
         Assert.Equal(new TextSpan(10, 1), diagnostic.Location.Span);
         Assert.True(DocumentUriPathComparer.Instance.Equals(MainUri, diagnostic.Location.Document));
     }

@@ -75,9 +75,9 @@ and/or the optional log file.
 
 ```
 $ cvolo-language-server --version
-Cvolo Language Server 0.1.0-alpha.11
+Cvolo Language Server 0.1.0-alpha.12
 Commit: 0000000000000000000000000000000000000000
-Tooling: 0.0.21.0
+Tooling: 0.0.21.1
 Compiler compatibility: 0.0.21
 ```
 
