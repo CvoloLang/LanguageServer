@@ -23,13 +23,16 @@ Extracted contents:
 ```
 cvolo-language-server[.exe]     the entrypoint: one self-contained single-file build
 bundle-manifest.json            the manifest described below
-<the complete pinned tooling bundle, verbatim>
+<the complete pinned tooling bundle, verbatim, 54 files for 0.0.21.0>
   tooling.manifest.json
   SHA256SUMS.txt
-  Cvolo.Compiler.Tooling.dll
-  Cvolo.*.dll, LLVMSharp*, K4os*, NSec*, Blake3.dll, Antlr4*
-  docs/…
-  libraries/…
+  Cvolo.Compiler.Tooling.dll     the only compile-time dependency
+  Cvolo.{Analysis,Core,Core.Packages,Emitter.LLVM,Packaging,Projects,Syntax,Syntax.Antlr}.dll
+  LLVMSharp.dll, LLVMSharp.Interop.dll
+  K4os.Compression.LZ4{,.Streams}.dll, K4os.Hash.xxHash.dll
+  NSec.Cryptography.dll, Blake3.dll, Antlr4.Runtime.Standard.dll
+  libraries/…                   the Cvolo standard library (.cvl sources)
+  docs/…                        CHANGELOG.md, README.md
 ```
 
 **The bundle is a single executable entry point, not a single file.** The executable
@@ -39,11 +42,17 @@ application base directory at runtime. Deleting the side files produces a server
 starts and then cannot compile anything, which is why the payload is mandatory and
 verified rather than optional.
 
-Because the tooling bundle is copied verbatim, the compiler executable and any other
-files it ships may be present in the archive as a side effect. The LanguageServer does
-not launch them; all diagnostics, completion, hover, navigation, rename, semantic
-tokens, type hierarchy, type layout and code actions are served in-process through
-`Compiler.Tooling`.
+The pinned `0.0.21.0` bundle is managed assemblies, standard-library sources and
+docs. It contains **no compiler executable**, and the server never launches one:
+diagnostics, completion, hover, navigation, rename, semantic tokens, type hierarchy,
+type layout and code actions are all served in-process through `Compiler.Tooling`.
+A consumer must not treat this archive as containing a separately invocable
+compiler.
+
+The payload is copied verbatim rather than curated, so its contents are whatever the
+pinned tooling version ships. That is precisely why it is verified by hash against
+the pinned `SHA256SUMS.txt` at package time instead of being pruned to a known file
+list.
 
 ## bundle-manifest.json
 
