@@ -27,13 +27,38 @@ internal sealed class TextDocumentSyncHandler(
     private DiagnosticPublisher? _publisher;
     private DiagnosticScheduler? _scheduler;
 
+    /// <summary>
+    /// Guards publication of the members below. Notifications are dispatched on their own threads,
+    /// so a didOpen and a concurrent request can both reach a member for the first time at once.
+    /// </summary>
+    private readonly object _publicationGate = new();
+
+    /// <summary>
+    /// Publishes exactly one instance: a volatile read on the fast path, then a re-check under the
+    /// gate that returns the field instead of a caller's own temporary, so a forked publisher or
+    /// scheduler (and its timers) is impossible.
+    /// </summary>
+    private T GetOrCreate<T>(ref T? slot, Func<T> factory) where T : class
+    {
+        T? published = Volatile.Read(ref slot);
+        if (published is not null)
+        {
+            return published;
+        }
+
+        lock (_publicationGate)
+        {
+            return slot ??= factory();
+        }
+    }
+
     // Resolved on first use so the session-scoped store is created from the
     // workspace folders/root established by initialize, not at registration time.
-    private DocumentStore Store => _store ??= storeAccessor();
+    private DocumentStore Store => GetOrCreate(ref _store, storeAccessor);
 
-    private DiagnosticPublisher Publisher => _publisher ??= new DiagnosticPublisher(logger, diagnostics);
+    private DiagnosticPublisher Publisher => GetOrCreate(ref _publisher, () => new DiagnosticPublisher(logger, diagnostics));
 
-    private DiagnosticScheduler Scheduler => _scheduler ??= new DiagnosticScheduler(Store, Publisher, logger);
+    private DiagnosticScheduler Scheduler => GetOrCreate(ref _scheduler, () => new DiagnosticScheduler(Store, Publisher, logger));
 
     [JsonRpcMethod(Methods.TextDocumentDidOpenName, UseSingleObjectParameterDeserialization = true)]
     public void DidOpen(DidOpenTextDocumentParams? parameters)

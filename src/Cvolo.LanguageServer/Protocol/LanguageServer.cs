@@ -24,6 +24,14 @@ internal sealed class LanguageServer(
     private readonly SessionState _state = new();
     private readonly DiagnosticSink _diagnostics = new(logger);
     private readonly CancellationTokenSource _sessionCancellation = new();
+
+    /// <summary>
+    /// Guards publication of every session-scoped member below. Notifications and requests are
+    /// dispatched on their own threads, so two callers can reach a member for the first time at the
+    /// same moment; without this gate each would build and keep its own instance.
+    /// </summary>
+    private readonly object _sessionGate = new();
+
     private DocumentStore? _store;
     private CompletionResolveStore? _resolveStore;
     private TextDocumentSyncHandler? _sync;
@@ -60,126 +68,161 @@ internal sealed class LanguageServer(
     internal DiagnosticSink Diagnostics => _diagnostics;
 
     /// <summary>
+    /// Publishes exactly one instance of a session-scoped member. The fast path is a volatile read;
+    /// the slow path re-checks under the gate and returns the field rather than a caller's own
+    /// temporary, so every caller ends up with the same instance. <c>??=</c> cannot be used here
+    /// because it returns the value the calling thread just built, which silently forks the member
+    /// when two threads are first at once.
+    /// </summary>
+    private T GetOrCreate<T>(ref T? slot, Func<T> factory) where T : class
+    {
+        T? published = Volatile.Read(ref slot);
+        if (published is not null)
+        {
+            return published;
+        }
+
+        lock (_sessionGate)
+        {
+            return slot ??= factory();
+        }
+    }
+
+    /// <summary>
     /// Session-scoped document store shared by every semantic handler. The
     /// workspace folders and fallback root from initialize are fixed for the
     /// session, so the store is built once on first use.
     /// </summary>
-    internal DocumentStore Store => _store ??= CreateStore();
+    internal DocumentStore Store => GetOrCreate(ref _store, CreateStore);
 
     /// <summary>
     /// Text document synchronization (didOpen/didChange/didClose) handler.
     /// </summary>
-    internal TextDocumentSyncHandler Sync => _sync ??= new TextDocumentSyncHandler(logger, _diagnostics, () => Store, () => Refresh.RequestRefresh());
+    internal TextDocumentSyncHandler Sync => GetOrCreate(
+        ref _sync,
+        () => new TextDocumentSyncHandler(logger, _diagnostics, () => Store, () => Refresh.RequestRefresh()));
 
     /// <summary>
     /// Session-scoped, bounded store of completion-resolve entries guarding opaque data tokens.
     /// </summary>
-    internal CompletionResolveStore ResolveStore => _resolveStore ??= new CompletionResolveStore();
+    internal CompletionResolveStore ResolveStore => GetOrCreate(ref _resolveStore, () => new CompletionResolveStore());
 
     /// <summary>
     /// textDocument/completion and completionItem/resolve handler.
     /// </summary>
-    internal CompletionHandler Completion => _completion ??= new CompletionHandler(
-        logger,
-        () => Store,
-        () => _state.CompletionSnippetSupport,
-        () => _state.CompletionResolveSupportProperties!,
-        () => _state.CompletionDocumentationMarkdown,
-        () => ResolveStore);
+    internal CompletionHandler Completion => GetOrCreate(
+        ref _completion,
+        () => new CompletionHandler(
+            logger,
+            () => Store,
+            () => _state.CompletionSnippetSupport,
+            () => _state.CompletionResolveSupportProperties!,
+            () => _state.CompletionDocumentationMarkdown,
+            () => ResolveStore));
 
     /// <summary>textDocument/signatureHelp handler.</summary>
-    internal SignatureHelpHandler SignatureHelp => _signatureHelp ??= new SignatureHelpHandler(
-        logger,
-        () => Store,
-        () => _state.SignatureHelpLabelOffsetSupport,
-        () => _state.SignatureHelpActiveParameterSupport);
+    internal SignatureHelpHandler SignatureHelp => GetOrCreate(
+        ref _signatureHelp,
+        () => new SignatureHelpHandler(
+            logger,
+            () => Store,
+            () => _state.SignatureHelpLabelOffsetSupport,
+            () => _state.SignatureHelpActiveParameterSupport));
 
     /// <summary>
     /// textDocument/hover handler.
     /// </summary>
-    internal HoverHandler Hover => _hover ??= new HoverHandler(logger, () => Store, () => _state.HoverPrefersMarkdown);
+    internal HoverHandler Hover => GetOrCreate(ref _hover, () => new HoverHandler(logger, () => Store, () => _state.HoverPrefersMarkdown));
 
     /// <summary>
     /// textDocument/definition handler.
     /// </summary>
-    internal DefinitionHandler Definition => _definition ??= new DefinitionHandler(logger, () => Store);
+    internal DefinitionHandler Definition => GetOrCreate(ref _definition, () => new DefinitionHandler(logger, () => Store));
 
-    internal TypeDefinitionHandler TypeDefinition => _typeDefinition ??= new TypeDefinitionHandler(logger, () => Store);
+    internal TypeDefinitionHandler TypeDefinition => GetOrCreate(ref _typeDefinition, () => new TypeDefinitionHandler(logger, () => Store));
 
-    internal ImplementationHandler Implementation => _implementation ??= new ImplementationHandler(logger, () => Store);
+    internal ImplementationHandler Implementation => GetOrCreate(ref _implementation, () => new ImplementationHandler(logger, () => Store));
 
-    internal PrepareTypeHierarchyHandler PrepareTypeHierarchy => _prepareTypeHierarchy ??= new PrepareTypeHierarchyHandler(logger, () => Store);
+    internal PrepareTypeHierarchyHandler PrepareTypeHierarchy => GetOrCreate(ref _prepareTypeHierarchy, () => new PrepareTypeHierarchyHandler(logger, () => Store));
 
-    internal TypeHierarchySupertypesHandler TypeHierarchySupertypes => _typeHierarchySupertypes ??= new TypeHierarchySupertypesHandler(logger, () => Store);
+    internal TypeHierarchySupertypesHandler TypeHierarchySupertypes => GetOrCreate(ref _typeHierarchySupertypes, () => new TypeHierarchySupertypesHandler(logger, () => Store));
 
-    internal TypeHierarchySubtypesHandler TypeHierarchySubtypes => _typeHierarchySubtypes ??= new TypeHierarchySubtypesHandler(logger, () => Store);
+    internal TypeHierarchySubtypesHandler TypeHierarchySubtypes => GetOrCreate(ref _typeHierarchySubtypes, () => new TypeHierarchySubtypesHandler(logger, () => Store));
 
     /// <summary>
     /// textDocument/documentSymbol handler.
     /// </summary>
-    internal DocumentSymbolHandler DocumentSymbols => _documentSymbols ??= new DocumentSymbolHandler(logger, () => Store, () => _state.HierarchicalDocumentSymbols);
+    internal DocumentSymbolHandler DocumentSymbols => GetOrCreate(ref _documentSymbols, () => new DocumentSymbolHandler(logger, () => Store, () => _state.HierarchicalDocumentSymbols));
 
     /// <summary>
     /// textDocument/semanticTokens/full handler.
     /// </summary>
-    internal SemanticTokensHandler SemanticTokens => _semanticTokens ??= new SemanticTokensHandler(logger, () => Store, () => _state.SemanticTokenTypes, () => _state.SemanticTokenModifiers);
+    internal SemanticTokensHandler SemanticTokens => GetOrCreate(ref _semanticTokens, () => new SemanticTokensHandler(logger, () => Store, () => _state.SemanticTokenTypes, () => _state.SemanticTokenModifiers));
 
     /// <summary>textDocument/references handler.</summary>
-    internal ReferencesHandler References => _references ??= new ReferencesHandler(logger, () => Store);
+    internal ReferencesHandler References => GetOrCreate(ref _references, () => new ReferencesHandler(logger, () => Store));
 
     /// <summary>textDocument/prepareRename and textDocument/rename handler.</summary>
-    internal RenameHandler Rename => _rename ??= new RenameHandler(logger, () => Store, () => _state.DocumentChangesSupported);
+    internal RenameHandler Rename => GetOrCreate(ref _rename, () => new RenameHandler(logger, () => Store, () => _state.DocumentChangesSupported));
 
     /// <summary>Session-scoped, bounded store of lazy code-action resolve entries.</summary>
-    internal CodeActionResolveStore CodeActionResolveStore => _codeActionResolveStore ??= new CodeActionResolveStore();
+    internal CodeActionResolveStore CodeActionResolveStore => GetOrCreate(ref _codeActionResolveStore, () => new CodeActionResolveStore());
 
     /// <summary>textDocument/codeAction and codeAction/resolve handler.</summary>
-    internal CodeActionHandler CodeActions => _codeActions ??= new CodeActionHandler(
-        logger,
-        () => Store,
-        () => _state.DocumentChangesSupported,
-        () => _state.LazyCodeActionEditResolveSupported,
-        () => CodeActionResolveStore);
+    internal CodeActionHandler CodeActions => GetOrCreate(
+        ref _codeActions,
+        () => new CodeActionHandler(
+            logger,
+            () => Store,
+            () => _state.DocumentChangesSupported,
+            () => _state.LazyCodeActionEditResolveSupported,
+            () => CodeActionResolveStore));
 
     /// <summary>
     /// Server-to-client semantic-token refresh coordinator.
     /// </summary>
-    internal SemanticTokensRefreshCoordinator Refresh => _refresh ??= new SemanticTokensRefreshCoordinator(
-        () => _state.SemanticTokensEnabled && _state.RefreshSupported,
-        logger);
+    internal SemanticTokensRefreshCoordinator Refresh => GetOrCreate(
+        ref _refresh,
+        () => new SemanticTokensRefreshCoordinator(
+            () => _state.SemanticTokensEnabled && _state.RefreshSupported,
+            logger));
 
     /// <summary>textDocument/codeLens handler.</summary>
-    internal CodeLensHandler CodeLenses => _codeLenses ??= new CodeLensHandler(logger, () => Store, () => _state.EditorIntelligence);
+    internal CodeLensHandler CodeLenses => GetOrCreate(ref _codeLenses, () => new CodeLensHandler(logger, () => Store, () => _state.EditorIntelligence));
 
     /// <summary>textDocument/inlayHint handler.</summary>
-    internal InlayHintHandler InlayHints => _inlayHints ??= new InlayHintHandler(logger, () => Store, () => _state.EditorIntelligence);
+    internal InlayHintHandler InlayHints => GetOrCreate(ref _inlayHints, () => new InlayHintHandler(logger, () => Store, () => _state.EditorIntelligence));
 
     /// <summary>textDocument/documentHighlight handler.</summary>
-    internal DocumentHighlightHandler DocumentHighlights => _documentHighlights ??= new DocumentHighlightHandler(logger, () => Store);
+    internal DocumentHighlightHandler DocumentHighlights => GetOrCreate(ref _documentHighlights, () => new DocumentHighlightHandler(logger, () => Store));
 
     /// <summary>textDocument/foldingRange handler.</summary>
-    internal FoldingRangeHandler FoldingRanges => _foldingRanges ??= new FoldingRangeHandler(logger, () => Store);
+    internal FoldingRangeHandler FoldingRanges => GetOrCreate(ref _foldingRanges, () => new FoldingRangeHandler(logger, () => Store));
 
     /// <summary>textDocument/selectionRange handler.</summary>
-    internal SelectionRangeHandler SelectionRanges => _selectionRanges ??= new SelectionRangeHandler(logger, () => Store);
+    internal SelectionRangeHandler SelectionRanges => GetOrCreate(ref _selectionRanges, () => new SelectionRangeHandler(logger, () => Store));
 
     /// <summary>The <c>cvolo/typeLayout</c> request behind the editor's read-only layout view.</summary>
-    internal TypeLayoutHandler TypeLayout => _typeLayout ??= new TypeLayoutHandler(logger, () => Store);
+    internal TypeLayoutHandler TypeLayout => GetOrCreate(ref _typeLayout, () => new TypeLayoutHandler(logger, () => Store));
 
     /// <summary>workspace/didChangeConfiguration handler for the editor intelligence settings.</summary>
-    internal ConfigurationHandler Configuration => _configuration ??= new ConfigurationHandler(
-        logger,
-        settings => _state.TryApplyConfiguration(settings),
-        () => EditorIntelligenceRefresh.RequestRefresh());
+    internal ConfigurationHandler Configuration => GetOrCreate(
+        ref _configuration,
+        () => new ConfigurationHandler(
+            logger,
+            settings => _state.TryApplyConfiguration(settings),
+            () => EditorIntelligenceRefresh.RequestRefresh()));
 
     /// <summary>
     /// Server-to-client CodeLens and inlay-hint refresh coordinator. A refresh follows a concrete
     /// event, such as a settings change; it is never scheduled on a timer and never polls.
     /// </summary>
-    internal EditorIntelligenceRefreshCoordinator EditorIntelligenceRefresh => _editorRefresh ??= new EditorIntelligenceRefreshCoordinator(
-        () => _state.CodeLensRefreshSupported,
-        () => _state.InlayHintRefreshSupported,
-        logger);
+    internal EditorIntelligenceRefreshCoordinator EditorIntelligenceRefresh => GetOrCreate(
+        ref _editorRefresh,
+        () => new EditorIntelligenceRefreshCoordinator(
+            () => _state.CodeLensRefreshSupported,
+            () => _state.InlayHintRefreshSupported,
+            logger));
 
     public InitializeResponse Initialize(InitializeRequestParams? initializeParams)
     {
