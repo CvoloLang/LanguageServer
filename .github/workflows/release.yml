@@ -315,10 +315,18 @@ jobs:
           # Every published per-platform file: the archive and its manifest checksum
           # sidecar. All ten are covered by SHA256SUMS, in a fixed order, so the
           # published set is verifiable as a whole.
+          #
+          # The sidecar is named for the archive without its extension, which is
+          # what pack-release-asset.ps1 produces:
+          #   cvolo-language-server-<version>-<rid>.<ext>
+          #   cvolo-language-server-<version>-<rid>.manifest.sha256
+          # This block previously looked for "<archive>.manifest.sha256", i.e. with
+          # .zip or .tar.gz kept in the name, so the existence check failed for
+          # every RID and no release was ever produced.
           expected=()
           for i in "${!rids[@]}"; do
             expected+=("cvolo-language-server-${VERSION}-${rids[$i]}.${ext[$i]}")
-            expected+=("cvolo-language-server-${VERSION}-${rids[$i]}.${ext[$i]}.manifest.sha256")
+            expected+=("cvolo-language-server-${VERSION}-${rids[$i]}.manifest.sha256")
           done
 
           for file in "${expected[@]}"; do
@@ -352,7 +360,7 @@ jobs:
           for i in "${!rids[@]}"; do
             rid="${rids[$i]}"
             archive="cvolo-language-server-${VERSION}-${rid}.${ext[$i]}"
-            sidecar="${archive}.manifest.sha256"
+            sidecar="cvolo-language-server-${VERSION}-${rid}.manifest.sha256"
             recorded="$(awk '{print $1}' "$sidecar")"
             extract_dir="manifest-check-${rid}"
             mkdir -p "$extract_dir"

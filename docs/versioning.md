@@ -7,7 +7,7 @@ derives the LanguageServer product version from the compiler or the tooling.
 
 | Identity | Source of truth | Current value | Meaning |
 | --- | --- | --- | --- |
-| `languageServerVersion` | `Directory.Build.props` -> `<Version>` | `0.1.0-alpha.10` | The LanguageServer product version. This is what the tag, the release and the VS Code extension refer to. |
+| `languageServerVersion` | `Directory.Build.props` -> `<Version>` | `0.1.0-alpha.11` | The LanguageServer product version. This is what the tag, the release and the VS Code extension refer to. |
 | `toolingVersion` | `tooling.version` | `0.0.21.0` | The exact pinned `Cvolo.Compiler.Tooling` revision this release is built against. |
 | `compilerCompatibilityLine` | `compiler-compatibility.version` | `0.0.21` | The compiler line this LanguageServer release supports. |
 
@@ -29,8 +29,9 @@ The LanguageServer product series is independent and monotonically increasing:
 ```
 0.1.0-alpha.8    historical
 0.1.0-alpha.9    tag exists; its release workflow failed, the version is consumed
-0.1.0-alpha.10   <- current
-0.1.0-alpha.11
+0.1.0-alpha.10   tag exists; the release job failed, the version is consumed
+0.1.0-alpha.11   <- current
+0.1.0-alpha.12
 ...
 0.1.0-beta.0
 0.1.0-beta.1
@@ -57,11 +58,11 @@ metadata change such as a tooling bump:
 ```
 Compiler line              0.0.21    unchanged
 Tooling                    0.0.21.0 -> 0.0.21.1
-LSP                        0.1.0-alpha.10 -> 0.1.0-alpha.11
+LSP                        0.1.0-alpha.11 -> 0.1.0-alpha.12
 
 Compiler moves to 0.0.22
 Tooling                    0.0.22.0
-LSP                        0.1.0-alpha.12   (the LSP product itself did not change)
+LSP                        0.1.0-alpha.13   (the LSP product itself did not change)
 ```
 
 Moving the compiler to a new line does **not** create a new LSP product series. It
@@ -84,13 +85,13 @@ the compiler line. A compiler-line change does not rename the branch.
 
 ```
 $ cvolo-language-server --version
-Cvolo Language Server 0.1.0-alpha.10
+Cvolo Language Server 0.1.0-alpha.11
 Commit: 0000000000000000000000000000000000000000
 Tooling: 0.0.21.0
 Compiler compatibility: 0.0.21
 
 $ cvolo-language-server --version --json
-{"languageServerVersion":"0.1.0-alpha.10","languageServerCommit":"...","toolingVersion":"0.0.21.0","toolingCommit":"...","compilerCompatibilityLine":"0.0.21","rid":"win-x64","targetFramework":"net10.0","runtimeVersion":"10.0.12"}
+{"languageServerVersion":"0.1.0-alpha.11","languageServerCommit":"...","toolingVersion":"0.0.21.0","toolingCommit":"...","compilerCompatibilityLine":"0.0.21","rid":"win-x64","targetFramework":"net10.0","runtimeVersion":"10.0.12"}
 ```
 
 `--version --json` is the machine-readable form and uses exactly the field names of

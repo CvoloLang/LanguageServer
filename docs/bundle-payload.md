@@ -14,6 +14,14 @@ cvolo-language-server-<version>-<rid>.tar.gz     (all other RIDs)
 cvolo-language-server-<version>-<rid>.manifest.sha256
 ```
 
+The sidecar is named for the archive **without** its extension, so it is never
+ambiguous which platform it belongs to:
+
+```
+cvolo-language-server-0.1.0-alpha.11-win-x64.zip
+cvolo-language-server-0.1.0-alpha.11-win-x64.manifest.sha256
+```
+
 ```
 <RID>  in  win-x64  linux-x64  linux-arm64  osx-x64  osx-arm64
 ```
@@ -62,7 +70,7 @@ sorted, so the same inputs always produce a byte-identical manifest.
 ```json
 {
   "schemaVersion": 2,
-  "languageServerVersion": "0.1.0-alpha.10",
+  "languageServerVersion": "0.1.0-alpha.11",
   "languageServerCommit": "<40-character SHA>",
   "toolingVersion": "0.0.21.0",
   "toolingCommit": "<40-character SHA>",
@@ -140,7 +148,7 @@ verifies the packaged archive.
 The GitHub Release contains exactly eleven files:
 
 - 5 platform archives
-- 5 `<archive-name>.manifest.sha256` sidecars, each covering `bundle-manifest.json`
+- 5 `<version>-<rid>.manifest.sha256` sidecars, each covering `bundle-manifest.json`
 - `SHA256SUMS`
 
 `SHA256SUMS` covers **all ten** per-platform files, in a fixed order, one
