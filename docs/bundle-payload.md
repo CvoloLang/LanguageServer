@@ -62,7 +62,7 @@ sorted, so the same inputs always produce a byte-identical manifest.
 ```json
 {
   "schemaVersion": 2,
-  "languageServerVersion": "0.1.0-alpha.9",
+  "languageServerVersion": "0.1.0-alpha.10",
   "languageServerCommit": "<40-character SHA>",
   "toolingVersion": "0.0.21.0",
   "toolingCommit": "<40-character SHA>",

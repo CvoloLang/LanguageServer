@@ -16,7 +16,7 @@ version follows its own `0.1.0-alpha.N` series and is deliberately independent
 of the compiler line, for example:
 
 ```xml
-<Version>0.1.0-alpha.9</Version>
+<Version>0.1.0-alpha.10</Version>
 ```
 
 Keep `tooling.version` and `compiler-compatibility.version` in step with the
@@ -26,7 +26,7 @@ metadata, not the product version.
 Commit, then create/push the matching tag:
 
 ```text
-v0.1.0-alpha.9
+v0.1.0-alpha.10
 ```
 
 `release.yml` requires all of the following, and fails the release otherwise:

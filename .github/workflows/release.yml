@@ -146,23 +146,29 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # A RID-specific single-file publish has a different package graph from
-          # the portable build: the SDK adds Microsoft.NET.ILLink.Tasks when
-          # PublishSingleFile is set. Restoring that graph in locked mode against
-          # the committed lock files fails with NU1004, and restoring it in place
-          # would rewrite those committed files. The lock file for this leg is
-          # therefore redirected into the disposable staging tree, so the publish is
-          # still restored from a lock file and the committed lock files are never
-          # modified. Package versions themselves are exact in the project files;
-          # the release's real determinism guarantee is the pinned, checksum-
-          # verified Tooling payload and the recorded commit.
-          mkdir -p artifacts/release/lock
+          # A RID-specific single-file publish resolves a different package graph
+          # from the portable build: with PublishSingleFile set, the SDK adds
+          # Microsoft.NET.ILLink.Tasks. The committed lock files describe the
+          # portable build, so restoring this graph in locked mode fails with
+          # NU1004.
+          #
+          # This leg therefore restores unlocked, with the exact package versions
+          # taken from the project files. The lock files in the working tree are
+          # rewritten to match the RID graph. That is deliberate and harmless: the
+          # runner is ephemeral, nothing is committed back, and the committed
+          # portable lock files are what ordinary CI verifies in locked mode.
+          #
+          # An earlier attempt redirected the lock file with NuGetLockFilePath and
+          # asserted it existed. Restore ignores that property, so no file was
+          # written and the assertion failed every leg. Release determinism does
+          # not rest on this lock file at all: it rests on the pinned and
+          # SHA256-verified Tooling payload, the exact package versions in the
+          # project files, the commit recorded in the binary, and the packaging
+          # step, which re-hashes all 55 payload files and refuses a tree that is
+          # not exactly the entrypoint plus the pinned bundle.
           dotnet restore src/Cvolo.LanguageServer/Cvolo.LanguageServer.csproj \
             -r "$RID" \
-            --use-lock-file \
-            -p:ContinuousIntegrationBuild=false \
-            -p:NuGetLockFilePath="artifacts/release/lock/$RID.packages.lock.json"
-          test -f "artifacts/release/lock/$RID.packages.lock.json"
+            -p:ContinuousIntegrationBuild=false
 
       # Deterministic staging: one directory owned by this matrix leg, recreated
       # immediately before publishing into it. A release never reads a binary out of
