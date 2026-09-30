@@ -48,6 +48,21 @@ if ! [[ "$TOOLING_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?([-+][0-9A-Za-z.
     exit 1
 fi
 
+# The compiler compatibility line this LanguageServer release advertises. It is a
+# separate, committed source of truth: it is not derived from the tooling version and
+# it is not part of the product version. It must exist and agree with the pinned
+# tooling bundle, which is checked in verify_compatibility_agreement.
+COMPAT_LINE_FILE="$REPO_ROOT/compiler-compatibility.version"
+EXPECTED_COMPILER_LINE="$(tr -d '[:space:]' < "$COMPAT_LINE_FILE" 2>/dev/null || true)"
+if [ -z "$EXPECTED_COMPILER_LINE" ]; then
+    err "compiler-compatibility.version is missing or empty under $REPO_ROOT"
+    exit 1
+fi
+if ! [[ "$EXPECTED_COMPILER_LINE" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)*$ ]]; then
+    err "compiler-compatibility.version '$EXPECTED_COMPILER_LINE' is not a well-formed compiler line"
+    exit 1
+fi
+
 TOOLING_ROOT="$ARTIFACTS_DIR/tooling"
 BUNDLE_DIR="$TOOLING_ROOT/$TOOLING_VERSION"
 PROPS_FILE="$ARTIFACTS_DIR/tooling-dir.props"
@@ -161,21 +176,47 @@ verify_manifest_fields() {
     return 0
 }
 
+verify_compatibility_agreement() {
+    # Two independent facts are cross-checked here:
+    #   tooling.version                 -> ToolingVersion in the bundle that was actually downloaded
+    #   compiler-compatibility.version  -> CompilerCompatibilityLine in that same bundle
+    # A disagreement means the pin and the advertised compatibility have drifted
+    # apart. Shipping that would advertise support for a compiler line the bundled
+    # tooling cannot serve, so it is a hard failure rather than a warning. The check
+    # runs on the cache reuse path and again on the fresh download path, before the
+    # build consumes anything.
+    local manifest="$1" tv comp
+    tv="$(manifest_string_field "$manifest" ToolingVersion)"
+    comp="$(manifest_string_field "$manifest" CompilerCompatibilityLine)"
+    if [ "$tv" != "$TOOLING_VERSION" ]; then
+        err "tooling.manifest.json ToolingVersion '$tv' does not match the tooling.version pin '$TOOLING_VERSION'"
+        return 1
+    fi
+    if [ "$comp" != "$EXPECTED_COMPILER_LINE" ]; then
+        err "compiler-compatibility.version '$EXPECTED_COMPILER_LINE' does not match the pinned tooling's CompilerCompatibilityLine '$comp'"
+        return 1
+    fi
+    return 0
+}
+
 verify_cached_bundle() {
     [ -f "$SHA256_SUMS_FILE" ] && [ -f "$MANIFEST_FILE" ] && [ -f "$TOOLING_DLL" ] || return 1
     verify_manifest_fields "$MANIFEST_FILE" || return 1
+    verify_compatibility_agreement "$MANIFEST_FILE" || return 1
     verify_checksums "$BUNDLE_DIR" "$SHA256_SUMS_FILE"
 }
 
 write_props() {
-    local tv comp
+    local tv comp commit
     tv="$(grep -o '"ToolingVersion"[[:space:]]*:[[:space:]]*"[^"]*"' "$MANIFEST_FILE" | sed 's/.*"\([^"]*\)"$/\1/')"
     comp="$(grep -o '"CompilerCompatibilityLine"[[:space:]]*:[[:space:]]*"[^"]*"' "$MANIFEST_FILE" | sed 's/.*"\([^"]*\)"$/\1/')"
+    commit="$(grep -o '"Commit"[[:space:]]*:[[:space:]]*"[^"]*"' "$MANIFEST_FILE" | sed 's/.*"\([^"]*\)"$/\1/')"
     {
         echo "<Project>"
         echo "  <PropertyGroup>"
         echo "    <CvoloToolingVersion>$tv</CvoloToolingVersion>"
         echo "    <CvoloToolingDir>\$(MSBuildThisFileDirectory)tooling/$tv</CvoloToolingDir>"
+        echo "    <ToolingCommit>$commit</ToolingCommit>"
         echo "    <CompilerCompatLine>$comp</CompilerCompatLine>"
         echo "  </PropertyGroup>"
         echo "</Project>"
@@ -299,6 +340,11 @@ fi
 
 if ! verify_manifest_fields "$TEMP_MANIFEST"; then
     err "Manifest does not satisfy the producer contract (ToolingVersion/CompilerCompatibilityLine/BuiltFromCompilerVersion/TargetFramework/RuntimeIdentifier/Commit)"
+    rm -f "$TEMP_ZIP"; rm -f "$TEMP_SHA"; rm -rf "$TEMP_EXTRACT"
+    exit 1
+fi
+
+if ! verify_compatibility_agreement "$TEMP_MANIFEST"; then
     rm -f "$TEMP_ZIP"; rm -f "$TEMP_SHA"; rm -rf "$TEMP_EXTRACT"
     exit 1
 fi

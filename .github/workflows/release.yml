@@ -13,11 +13,12 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
+      commit: ${{ steps.version.outputs.commit }}
     steps:
       - uses: actions/checkout@v4
 
       - id: version
-        name: Validate tag and project version
+        name: Validate tag, project version, and commit provenance
         shell: bash
         run: |
           set -euo pipefail
@@ -37,7 +38,29 @@ jobs:
             exit 1
           fi
 
+          # The product version must look like a LanguageServer product version, not
+          # a compiler line. Compatibility belongs in compiler-compatibility.version.
+          case "$version" in
+            0.[0-9]*.[0-9]*) ;;
+            *) echo "Release version '$version' must be an independent LanguageServer product version, not a compiler line." >&2; exit 1 ;;
+          esac
+
+          # The commit under test must be exactly the commit the tag points at. This
+          # is the only place a release commit is established; every later step and
+          # the packaged manifest all derive from it.
+          head_commit="$(git rev-parse HEAD)"
+          tag_commit="$(git rev-parse "${tag}^{commit}")"
+          if [ "$head_commit" != "$tag_commit" ]; then
+            echo "Checked out HEAD '$head_commit' is not the commit tagged '$tag' ('$tag_commit')." >&2
+            exit 1
+          fi
+          if ! [[ "$head_commit" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Resolved release commit '$head_commit' is not a full 40-character SHA." >&2
+            exit 1
+          fi
+
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "commit=$head_commit" >> "$GITHUB_OUTPUT"
 
   test:
     needs: validate
@@ -100,6 +123,7 @@ jobs:
     env:
       ContinuousIntegrationBuild: true
       VERSION: ${{ needs.validate.outputs.version }}
+      COMMIT: ${{ needs.validate.outputs.commit }}
       RID: ${{ matrix.rid }}
     steps:
       - uses: actions/checkout@v4
@@ -126,12 +150,26 @@ jobs:
             --locked-mode \
             -p:ContinuousIntegrationBuild=true
 
+      # Deterministic staging: one directory owned by this matrix leg, recreated
+      # immediately before publishing into it. A release never reads a binary out of
+      # src/**/bin/** or a previous artifacts tree - a stale single-file host left in a
+      # RID-specific bin subdirectory would otherwise be packaged under a tag it was
+      # never built from.
+      - name: Prepare publish staging directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          publish_dir="artifacts/release/publish/$RID"
+          rm -rf "$publish_dir"
+          mkdir -p "$publish_dir"
+          echo "PUBLISH_DIR=$publish_dir" >> "$GITHUB_ENV"
+          echo "Staging directory prepared: $publish_dir"
+
       - name: Publish self-contained server
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf artifacts/release/publish
-          mkdir -p artifacts/release/publish
+          test -d "$PUBLISH_DIR"
 
           dotnet publish src/Cvolo.LanguageServer/Cvolo.LanguageServer.csproj \
             -c Release \
@@ -145,49 +183,67 @@ jobs:
             -p:DebugSymbols=false \
             -p:ContinuousIntegrationBuild=true \
             -p:Version="$VERSION" \
-            -o artifacts/release/publish
+            -p:LanguageServerCommit="$COMMIT" \
+            -o "$PUBLISH_DIR"
 
       - name: Validate publish output and smoke --version
         shell: bash
         run: |
           set -euo pipefail
           if [ "$RUNNER_OS" = "Windows" ]; then
-            exe="artifacts/release/publish/cvolo-language-server.exe"
+            exe="$PUBLISH_DIR/cvolo-language-server.exe"
           else
-            exe="artifacts/release/publish/cvolo-language-server"
+            exe="$PUBLISH_DIR/cvolo-language-server"
             chmod +x "$exe"
           fi
 
           test -f "$exe"
           "$exe" --version
+          "$exe" --version --json
 
           tooling_version="$(sed -n 's:.*<CvoloToolingVersion>\(.*\)</CvoloToolingVersion>.*:\1:p' artifacts/tooling-dir.props)"
+          tooling_commit="$(sed -n 's:.*<ToolingCommit>\(.*\)</ToolingCommit>.*:\1:p' artifacts/tooling-dir.props)"
           test -n "$tooling_version"
+          test -n "$tooling_commit"
           tooling_dir="artifacts/tooling/$tooling_version"
           test -d "$tooling_dir"
+          missing=0
           while IFS= read -r -d '' tooling_file; do
             relative="${tooling_file#"$tooling_dir"/}"
-            test -f "artifacts/release/publish/$relative"
+            if [ ! -f "$PUBLISH_DIR/$relative" ]; then
+              echo "Missing tooling payload file in publish output: $relative" >&2
+              missing=$((missing + 1))
+            fi
           done < <(find "$tooling_dir" -type f -print0)
-          echo "Verified complete tooling payload for $tooling_version in publish output."
+          if [ "$missing" -ne 0 ]; then
+            echo "Publish output is missing $missing tooling payload file(s)." >&2
+            exit 1
+          fi
+          echo "Verified complete tooling payload for $tooling_version@$tooling_commit in publish output."
 
       - name: Create producer bundle manifest
         shell: pwsh
         run: |
           ./build/release/new-bundle-manifest.ps1 `
-            -PublishDir "artifacts/release/publish" `
+            -PublishDir "$env:PUBLISH_DIR" `
             -Rid "${{ matrix.rid }}" `
-            -ServerVersion "${{ needs.validate.outputs.version }}" `
-            -SourceRevision "${{ github.sha }}" `
-            -OutputPath "artifacts/release/bundle-manifest.json"
+            -ToolingDir "artifacts/tooling/$(Select-Xml -Path artifacts/tooling-dir.props -XPath '/Project/PropertyGroup/CvoloToolingVersion' | ForEach-Object { $_.Node.InnerText })" `
+            -ExpectedLanguageServerVersion "${{ needs.validate.outputs.version }}" `
+            -ExpectedLanguageServerCommit "${{ needs.validate.outputs.commit }}" `
+            -ExpectedToolingVersion "$(Select-Xml -Path artifacts/tooling-dir.props -XPath '/Project/PropertyGroup/CvoloToolingVersion' | ForEach-Object { $_.Node.InnerText })" `
+            -ExpectedToolingCommit "$(Select-Xml -Path artifacts/tooling-dir.props -XPath '/Project/PropertyGroup/ToolingCommit' | ForEach-Object { $_.Node.InnerText })" `
+            -ExpectedCompilerCompatibilityLine "$(Select-Xml -Path artifacts/tooling-dir.props -XPath '/Project/PropertyGroup/CompilerCompatLine' | ForEach-Object { $_.Node.InnerText })" `
+            -OutputPath "$env:PUBLISH_DIR/../bundle-manifest.json"
 
       - name: Package asset
         shell: pwsh
         run: |
+          $toolingVersion = (Select-Xml -Path artifacts/tooling-dir.props -XPath '/Project/PropertyGroup/CvoloToolingVersion').Node.InnerText
           ./build/release/pack-release-asset.ps1 `
-            -PublishDir "artifacts/release/publish" `
-            -ManifestPath "artifacts/release/bundle-manifest.json" `
+            -PublishDir "$env:PUBLISH_DIR" `
+            -ManifestPath "$env:PUBLISH_DIR/../bundle-manifest.json" `
             -Rid "${{ matrix.rid }}" `
+            -ToolingDir "artifacts/tooling/$toolingVersion" `
             -Version "${{ needs.validate.outputs.version }}" `
             -ArchiveExtension "${{ matrix.archive_ext }}" `
             -OutputDir "artifacts/release/out"
@@ -195,11 +251,14 @@ jobs:
       - name: Smoke packaged release asset
         shell: pwsh
         run: |
+          $toolingVersion = (Select-Xml -Path artifacts/tooling-dir.props -XPath '/Project/PropertyGroup/CvoloToolingVersion').Node.InnerText
           ./build/release/test-release-asset.ps1 `
             -ArchivePath "artifacts/release/out/cvolo-language-server-${{ needs.validate.outputs.version }}-${{ matrix.rid }}.${{ matrix.archive_ext }}" `
             -Rid "${{ matrix.rid }}" `
+            -ToolingDir "artifacts/tooling/$toolingVersion" `
             -ExpectedServerVersion "${{ needs.validate.outputs.version }}" `
-            -ExpectedToolingVersion "$(Select-Xml -Path artifacts/tooling-dir.props -XPath '/Project/PropertyGroup/CvoloToolingVersion' | ForEach-Object { $_.Node.InnerText })" `
+            -ExpectedLanguageServerCommit "${{ needs.validate.outputs.commit }}" `
+            -ExpectedToolingVersion "$toolingVersion" `
             -ExpectedCompilerLine "$(Select-Xml -Path artifacts/tooling-dir.props -XPath '/Project/PropertyGroup/CompilerCompatLine' | ForEach-Object { $_.Node.InnerText })"
 
       - uses: actions/upload-artifact@v4
@@ -227,23 +286,40 @@ jobs:
           VERSION: ${{ needs.validate.outputs.version }}
         run: |
           set -euo pipefail
+          export LC_ALL=C
           cd release-assets
 
-          expected=(
-            "cvolo-language-server-${VERSION}-win-x64.zip"
-            "cvolo-language-server-${VERSION}-linux-x64.tar.gz"
-            "cvolo-language-server-${VERSION}-linux-arm64.tar.gz"
-            "cvolo-language-server-${VERSION}-osx-x64.tar.gz"
-            "cvolo-language-server-${VERSION}-osx-arm64.tar.gz"
-          )
+          rids=(win-x64 linux-x64 linux-arm64 osx-x64 osx-arm64)
+          ext=(zip tar.gz tar.gz tar.gz tar.gz)
+
+          # Every published per-platform file: the archive and its manifest checksum
+          # sidecar. All ten are covered by SHA256SUMS, in a fixed order, so the
+          # published set is verifiable as a whole.
+          expected=()
+          for i in "${!rids[@]}"; do
+            expected+=("cvolo-language-server-${VERSION}-${rids[$i]}.${ext[$i]}")
+            expected+=("cvolo-language-server-${VERSION}-${rids[$i]}.${ext[$i]}.manifest.sha256")
+          done
 
           for file in "${expected[@]}"; do
             test -f "$file" || { echo "Missing release asset: $file" >&2; exit 1; }
           done
 
-          archive_count="$(find . -maxdepth 1 -type f \( -name '*.zip' -o -name '*.tar.gz' \) | wc -l)"
+          archive_count="$(find . -maxdepth 1 -type f \( -name '*.zip' -o -name '*.tar.gz' \) ! -name '*.manifest.sha256' | wc -l)"
           if [ "$archive_count" -ne 5 ]; then
-            echo "Expected exactly 5 archives, got $archive_count." >&2
+            echo "Expected exactly 5 platform archives, got $archive_count." >&2
+            exit 1
+          fi
+          sidecar_count="$(find . -maxdepth 1 -type f -name '*.manifest.sha256' | wc -l)"
+          if [ "$sidecar_count" -ne 5 ]; then
+            echo "Expected exactly 5 manifest checksum sidecars, got $sidecar_count." >&2
+            exit 1
+          fi
+
+          # Nothing beyond the expected ten files may be published.
+          published_count="$(find . -maxdepth 1 -type f ! -name 'SHA256SUMS' | wc -l)"
+          if [ "$published_count" -ne 10 ]; then
+            echo "Expected exactly 10 published per-platform files, got $published_count." >&2
             exit 1
           fi
 
@@ -251,6 +327,27 @@ jobs:
           for file in "${expected[@]}"; do
             sha256sum "$file" >> SHA256SUMS
           done
+
+          # The manifest sidecars must describe the manifests inside the archives.
+          for i in "${!rids[@]}"; do
+            rid="${rids[$i]}"
+            archive="cvolo-language-server-${VERSION}-${rid}.${ext[$i]}"
+            sidecar="${archive}.manifest.sha256"
+            recorded="$(awk '{print $1}' "$sidecar")"
+            extract_dir="manifest-check-${rid}"
+            mkdir -p "$extract_dir"
+            if [ "${ext[$i]}" = "zip" ]; then
+              unzip -q -o "$archive" bundle-manifest.json -d "$extract_dir"
+            else
+              tar -C "$extract_dir" -xzf "$archive" ./bundle-manifest.json
+            fi
+            actual="$(sha256sum "$extract_dir/bundle-manifest.json" | awk '{print $1}')"
+            if [ "$recorded" != "$actual" ]; then
+              echo "Sidecar $sidecar records $recorded but the archived manifest hashes to $actual." >&2
+              exit 1
+            fi
+          done
+          echo "SHA256SUMS covers 10 published files; all 5 manifest sidecars match their archives."
 
       - name: Create GitHub prerelease
         env:

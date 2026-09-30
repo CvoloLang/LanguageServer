@@ -2,7 +2,11 @@ name: CI
 
 on:
   push:
-    branches: [master]
+    branches:
+      - master
+      # LanguageServer development happens on develop/0.1.0, so every develop push is
+      # built and tested here before a release tag is cut from it.
+      - 'develop/**'
     tags: ['*']
   pull_request:
 

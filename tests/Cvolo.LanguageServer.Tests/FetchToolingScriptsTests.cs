@@ -27,6 +27,13 @@ public class FetchToolingScriptsTests
 
     private static string ToolingVersion { get; } = File.ReadAllText(Path.Combine(FindRepoRoot(), "tooling.version")).Trim();
 
+    /// <summary>
+    /// The committed compiler compatibility line. A fake bundle that claims a
+    /// different line must be rejected, so the valid-bundle tests use the real value.
+    /// </summary>
+    private static string CompilerCompatibilityLine { get; } =
+        File.ReadAllText(Path.Combine(FindRepoRoot(), "compiler-compatibility.version")).Trim();
+
     private static string CreateFakeArtifactsRoot()
     {
         var root = Path.Combine(Path.GetTempPath(), "cvolo-ls-fetchtest-" + Guid.NewGuid().ToString("N"));
@@ -92,7 +99,7 @@ public class FetchToolingScriptsTests
         return doc.RootElement.TryGetProperty("ToolingVersion", out JsonElement value) ? value.GetString() : null;
     }
 
-    private static (int ExitCode, string Stdout, string Stderr) RunFetchScript(string artifactsRoot)
+    private static (int ExitCode, string Stdout, string Stderr) RunFetchScript(string artifactsRoot, string? repoRoot = null)
     {
         var buildDir = Path.Combine(FindRepoRoot(), "build");
         ProcessStartInfo psi;
@@ -111,16 +118,33 @@ public class FetchToolingScriptsTests
             psi.ArgumentList.Add(Path.Combine(buildDir, "fetch-tooling.ps1"));
             psi.ArgumentList.Add("-ArtifactsRoot");
             psi.ArgumentList.Add(artifactsRoot);
+            if (repoRoot is not null)
+            {
+                psi.ArgumentList.Add("-RepoRoot");
+                psi.ArgumentList.Add(repoRoot);
+            }
         }
         else
         {
+            // The POSIX bootstrap derives the repository root from its own location, so
+            // driving a different repository root means running a copy of the script
+            // placed inside that repository.
+            string script = Path.Combine(buildDir, "fetch-tooling.sh");
+            if (repoRoot is not null)
+            {
+                var stagedBuild = Path.Combine(repoRoot, "build");
+                Directory.CreateDirectory(stagedBuild);
+                script = Path.Combine(stagedBuild, "fetch-tooling.sh");
+                File.Copy(Path.Combine(buildDir, "fetch-tooling.sh"), script, overwrite: true);
+            }
+
             psi = new ProcessStartInfo("bash")
             {
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
             };
-            psi.ArgumentList.Add(Path.Combine(buildDir, "fetch-tooling.sh"));
+            psi.ArgumentList.Add(script);
             psi.ArgumentList.Add("--artifacts-root");
             psi.ArgumentList.Add(artifactsRoot);
         }
@@ -151,7 +175,7 @@ public class FetchToolingScriptsTests
         try
         {
             var bundle = BundleDir(root);
-            WriteManifest(bundle, ToolingVersion, compatLine: "0.0");
+            WriteManifest(bundle, ToolingVersion, CompilerCompatibilityLine);
             WriteDummyToolingDll(bundle);
             WriteDummyNativeTooling(bundle);
             WriteSums(bundle, BuildCanonicalSumsContent(bundle));
@@ -180,7 +204,7 @@ public class FetchToolingScriptsTests
         try
         {
             var bundle = BundleDir(root);
-            WriteManifest(bundle, ToolingVersion, "0.0");
+            WriteManifest(bundle, ToolingVersion, CompilerCompatibilityLine);
             WriteDummyToolingDll(bundle);
             var canonical = BuildCanonicalSumsContent(bundle);
             var firstLine = canonical.Split('\n')[0];
@@ -205,7 +229,7 @@ public class FetchToolingScriptsTests
         try
         {
             var bundle = BundleDir(root);
-            WriteManifest(bundle, ToolingVersion, "0.0");
+            WriteManifest(bundle, ToolingVersion, CompilerCompatibilityLine);
             WriteDummyToolingDll(bundle);
             var canonical = BuildCanonicalSumsContent(bundle);
             var firstLine = canonical.Split('\n')[0];
@@ -229,7 +253,7 @@ public class FetchToolingScriptsTests
         try
         {
             var bundle = BundleDir(root);
-            WriteManifest(bundle, ToolingVersion, "0.0");
+            WriteManifest(bundle, ToolingVersion, CompilerCompatibilityLine);
             WriteDummyToolingDll(bundle);
             var lines = BuildCanonicalSumsContent(bundle).Split('\n', StringSplitOptions.RemoveEmptyEntries);
             var reversed = string.Join('\n', lines.Reverse()) + "\n";
@@ -253,7 +277,7 @@ public class FetchToolingScriptsTests
         {
             var bundle = BundleDir(root);
             // conflicting version
-            WriteManifest(bundle, toolingVersion: "9.9.9", compatLine: "0.0"); 
+            WriteManifest(bundle, toolingVersion: "9.9.9", compatLine: CompilerCompatibilityLine);
             WriteDummyToolingDll(bundle);
             WriteSums(bundle, BuildCanonicalSumsContent(bundle));
             var marker = Path.Combine(bundle, "keep-me.bin");
@@ -273,6 +297,80 @@ public class FetchToolingScriptsTests
         finally
         {
             Directory.Delete(root, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// The pinned tooling bundle and the committed compiler compatibility line are
+    /// separate facts, so they can disagree. When they do, the bundle advertises
+    /// support for a compiler line this LanguageServer no longer claims, and the
+    /// bootstrap must refuse it even though the bundle is internally well-formed:
+    /// its checksums, its producer contract and its tooling version all pass.
+    /// </summary>
+    [Fact]
+    public void CompilerLineDisagreeingWithCommittedFile_IsRejected_AndPropsNotWritten()
+    {
+        var root = CreateFakeArtifactsRoot();
+        try
+        {
+            var bundle = BundleDir(root);
+            WriteManifest(bundle, ToolingVersion, "0.0");
+            WriteDummyToolingDll(bundle);
+            WriteDummyNativeTooling(bundle);
+            WriteSums(bundle, BuildCanonicalSumsContent(bundle));
+
+            (var exit, var stdout, var stderr) = RunFetchScript(root);
+
+            Assert.NotEqual(0, exit);
+            var output = stdout + stderr;
+            Assert.Contains("compiler-compatibility.version", output, StringComparison.Ordinal);
+            Assert.Contains(CompilerCompatibilityLine, output, StringComparison.Ordinal);
+            Assert.False(
+                File.Exists(Path.Combine(root, "tooling-dir.props")),
+                "props must not be written when the compatibility line disagrees");
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// The committed compiler compatibility line is a hard build input, not a
+    /// fallback. Without it the build has no compiler line to advertise, so the
+    /// bootstrap must fail rather than silently accept the pinned tooling's own line.
+    /// </summary>
+    [Fact]
+    public void MissingCommittedCompilerLine_IsRejected_AndPropsNotWritten()
+    {
+        var root = CreateFakeArtifactsRoot();
+        var fakeRepo = Path.Combine(Path.GetTempPath(), "cvolo-ls-fetchtest-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var bundle = BundleDir(root);
+            WriteManifest(bundle, ToolingVersion, CompilerCompatibilityLine);
+            WriteDummyToolingDll(bundle);
+            WriteDummyNativeTooling(bundle);
+            WriteSums(bundle, BuildCanonicalSumsContent(bundle));
+
+            // A repository skeleton that has tooling.version but deliberately lacks
+            // compiler-compatibility.version.
+            Directory.CreateDirectory(fakeRepo);
+            File.WriteAllText(Path.Combine(fakeRepo, "tooling.version"), ToolingVersion + Environment.NewLine);
+
+            (var exit, var stdout, var stderr) = RunFetchScript(root, repoRoot: fakeRepo);
+            var output = stdout + stderr;
+
+            Assert.NotEqual(0, exit);
+            Assert.Contains("compiler-compatibility.version is missing or empty", output, StringComparison.Ordinal);
+            Assert.False(
+                File.Exists(Path.Combine(root, "tooling-dir.props")),
+                "props must not be written when the committed compiler line is absent");
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+            Directory.Delete(fakeRepo, recursive: true);
         }
     }
 }

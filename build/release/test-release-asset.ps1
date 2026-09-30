@@ -1,13 +1,33 @@
+<#
+    test-release-asset.ps1 - verify a packaged release archive, end to end
+
+    Everything is verified against the artifact that a user would download. The
+    archive is extracted into a private staging directory, the executable under test
+    is the one extracted from that archive (never anything left in the project
+    bin/ tree), and the bundled manifest is checked to describe the extracted
+    contents exactly.
+
+    The identity is then confirmed three ways, which must all agree:
+      1. the shipped bundle-manifest.json,
+      2. 'cvolo-language-server --version'        (human, four lines),
+      3. 'cvolo-language-server --version --json' (machine, one object),
+    plus the pinned tooling bundle's own manifest, which must name the same tooling
+    version and compiler compatibility line. Finally the server is started over
+    stdio JSON-RPC and must produce compiler-backed diagnostics.
+#>
 param(
     [Parameter(Mandatory = $true)][string]$ArchivePath,
     [Parameter(Mandatory = $true)][string]$Rid,
+    [Parameter(Mandatory = $true)][string]$ToolingDir,
     [Parameter(Mandatory = $true)][string]$ExpectedServerVersion,
+    [Parameter(Mandatory = $true)][string]$ExpectedLanguageServerCommit,
     [Parameter(Mandatory = $true)][string]$ExpectedToolingVersion,
     [Parameter(Mandatory = $true)][string]$ExpectedCompilerLine
 )
 
 $ErrorActionPreference = 'Stop'
 
+. (Join-Path $PSScriptRoot 'bundle-common.ps1')
 . (Join-Path $PSScriptRoot 'file-uri.ps1')
 
 # Windows PowerShell 5.1 deadlocks on ReadLineAsync().Wait(); use blocking reads with a
@@ -127,24 +147,112 @@ try {
         throw "Unsupported archive extension: $archive"
     }
 
-    $exeName = if ($Rid -eq 'win-x64') { 'cvolo-language-server.exe' } else { 'cvolo-language-server' }
+    $exeName = Get-BundleEntrypointName -Rid $Rid
     $exe = Join-Path $stage $exeName
     if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw "Missing packaged executable: $exe" }
     if (-not (Test-Path -LiteralPath (Join-Path $stage 'Cvolo.Compiler.Tooling.dll') -PathType Leaf)) { throw 'Missing packaged Cvolo.Compiler.Tooling.dll' }
-    if (-not (Test-Path -LiteralPath (Join-Path $stage 'tooling.manifest.json') -PathType Leaf)) { throw 'Missing packaged tooling.manifest.json' }
     if (-not (Test-Path -LiteralPath (Join-Path $stage 'SHA256SUMS.txt') -PathType Leaf)) { throw 'Missing packaged SHA256SUMS.txt' }
 
     if ($Rid -ne 'win-x64') {
         chmod +x $exe
     }
 
+    # ---------------------------------------------------------------------
+    # The shipped manifest must describe the extracted archive exactly.
+    # ---------------------------------------------------------------------
+    $manifestPath = Join-Path $stage 'bundle-manifest.json'
+    if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) { throw 'Missing packaged bundle-manifest.json' }
+    $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+    Test-BundleManifestSchema -Manifest $manifest -Rid $Rid
+    Assert-BundleStagingLayout -Root $stage
+    Assert-ToolingPayloadMatches -Root $stage -ToolingDir $ToolingDir -Rid $Rid -AllowExtra @('bundle-manifest.json')
+    Assert-ManifestMatchesDirectory -Root $stage -Manifest $manifest -AllowExtra @('bundle-manifest.json')
+
+    foreach ($pair in @(
+            @{ Field = 'languageServerVersion'; Expected = $ExpectedServerVersion },
+            @{ Field = 'languageServerCommit'; Expected = $ExpectedLanguageServerCommit },
+            @{ Field = 'toolingVersion'; Expected = $ExpectedToolingVersion },
+            @{ Field = 'compilerCompatibilityLine'; Expected = $ExpectedCompilerLine },
+            @{ Field = 'rid'; Expected = $Rid })) {
+        $actual = Get-BundleManifestField -Source $manifest -Name $pair.Field
+        if ($actual -ne $pair.Expected) {
+            throw "Packaged bundle-manifest.json $($pair.Field) is '$actual' but the release expects '$($pair.Expected)'."
+        }
+    }
+
+    # The pinned tooling bundle ships inside the archive, so the compatibility gate
+    # is re-applied to the files actually being released, not just to the ones the
+    # build consumed: the packaged tooling manifest must name the same tooling
+    # version and the same compiler compatibility line.
+    $packagedToolingManifest = Get-Content -LiteralPath (Join-Path $stage 'tooling.manifest.json') -Raw | ConvertFrom-Json
+    if ([string]$packagedToolingManifest.ToolingVersion -ne [string]$manifest.toolingVersion) {
+        throw "Packaged tooling.manifest.json ToolingVersion '$($packagedToolingManifest.ToolingVersion)' does not match the bundle manifest toolingVersion '$($manifest.toolingVersion)'."
+    }
+    if ([string]$packagedToolingManifest.CompilerCompatibilityLine -ne [string]$manifest.compilerCompatibilityLine) {
+        throw "Packaged tooling.manifest.json CompilerCompatibilityLine '$($packagedToolingManifest.CompilerCompatibilityLine)' does not match the bundle manifest compilerCompatibilityLine '$($manifest.compilerCompatibilityLine)'."
+    }
+    if ([string]$packagedToolingManifest.Commit -ne [string]$manifest.toolingCommit) {
+        throw "Packaged tooling.manifest.json Commit '$($packagedToolingManifest.Commit)' does not match the bundle manifest toolingCommit '$($manifest.toolingCommit)'."
+    }
+
+    # ---------------------------------------------------------------------
+    # Identity: human form, then machine form, then all three against each other.
+    # ---------------------------------------------------------------------
     $versionOutput = (& $exe --version 2>&1 | Out-String).Trim()
     if ($versionOutput -match 'Cvolo\.Compiler\.Tooling\.dll is unavailable') { throw "Tooling unavailable during --version: $versionOutput" }
     $versionLines = @($versionOutput -split "`r?`n" | Where-Object { $_ -ne '' })
-    if ($versionLines.Count -lt 3) { throw "Unexpected --version output: $versionOutput" }
-    if (-not $versionLines[0].StartsWith("cvolo-language-server $ExpectedServerVersion", [StringComparison]::Ordinal)) { throw "Unexpected server version line: $($versionLines[0])" }
-    if ($versionLines[1] -ne "tooling $ExpectedToolingVersion") { throw "Unexpected tooling version line: $($versionLines[1])" }
-    if ($versionLines[2] -ne "compiler-line $ExpectedCompilerLine") { throw "Unexpected compiler line: $($versionLines[2])" }
+    if ($versionLines.Count -ne 4) { throw "Expected exactly 4 --version lines, got $($versionLines.Count): $versionOutput" }
+    $expectedVersionLines = @(
+        "Cvolo Language Server $ExpectedServerVersion",
+        "Commit: $ExpectedLanguageServerCommit",
+        "Tooling: $ExpectedToolingVersion",
+        "Compiler compatibility: $ExpectedCompilerLine"
+    )
+    for ($i = 0; $i -lt 4; $i++) {
+        if ($versionLines[$i] -ne $expectedVersionLines[$i]) {
+            throw "--version line $($i + 1) is '$($versionLines[$i])' but must be '$($expectedVersionLines[$i])'."
+        }
+    }
+
+    $jsonOutput = (& $exe --version --json 2>&1 | Out-String).Trim()
+    if ($jsonOutput -match 'Cvolo\.Compiler\.Tooling\.dll is unavailable') { throw "Tooling unavailable during --version --json: $jsonOutput" }
+    $identity = $null
+    try {
+        $identity = $jsonOutput | ConvertFrom-Json
+    }
+    catch {
+        throw "--version --json did not emit a single JSON object: $jsonOutput"
+    }
+    Assert-BundleIdentity -Identity $identity `
+        -ExpectedLanguageServerVersion ([string]$manifest.languageServerVersion) `
+        -ExpectedLanguageServerCommit ([string]$manifest.languageServerCommit) `
+        -ExpectedToolingVersion ([string]$manifest.toolingVersion) `
+        -ExpectedToolingCommit ([string]$manifest.toolingCommit) `
+        -ExpectedCompilerCompatibilityLine ([string]$manifest.compilerCompatibilityLine) `
+        -ExpectedRid $Rid `
+        -ExpectedTargetFramework ([string]$manifest.targetFramework)
+
+    # --json without --version is a usage error, not a request to start the server.
+    $jsonOnly = [Diagnostics.Process]::new()
+    $jsonOnly.StartInfo.FileName = $exe
+    $jsonOnly.StartInfo.Arguments = '--json'
+    $jsonOnly.StartInfo.UseShellExecute = $false
+    $jsonOnly.StartInfo.RedirectStandardOutput = $true
+    $jsonOnly.StartInfo.RedirectStandardError = $true
+    $jsonOnly.StartInfo.CreateNoWindow = $true
+    try {
+        [void]$jsonOnly.Start()
+        [void]$jsonOnly.StandardOutput.ReadToEnd()
+        [void]$jsonOnly.StandardError.ReadToEnd()
+        if (-not $jsonOnly.WaitForExit(20000)) { $jsonOnly.Kill() }
+        if ($jsonOnly.ExitCode -eq 0) {
+            throw "'--json' without '--version' was accepted; it must be rejected."
+        }
+    }
+    finally {
+        try { if (-not $jsonOnly.HasExited) { $jsonOnly.Kill() } } catch { }
+        try { $jsonOnly.Dispose() } catch { }
+    }
 
     $logPath = $null
     $process = [Diagnostics.Process]::new()
@@ -220,7 +328,9 @@ try {
     if ($stderrText -match 'Cvolo\.Compiler\.Tooling\.dll is unavailable') { throw "Tooling unavailable warning was emitted: $stderrText" }
     if ($stderrText -notmatch 'Cvolo\.Compiler\.Tooling .* loaded successfully') { throw "Tooling load success was not logged. stderr: $stderrText" }
 
-    Write-Output "Release smoke passed for $Rid (server $ExpectedServerVersion, tooling $ExpectedToolingVersion, compiler-line $ExpectedCompilerLine)."
+    Write-Output ("Release smoke passed for {0}: server {1}, commit {2}, tooling {3}, compiler line {4}, {5} verified files, runtime {6}." -f `
+            $Rid, $manifest.languageServerVersion, $manifest.languageServerCommit, $manifest.toolingVersion, `
+            $manifest.compilerCompatibilityLine, @($manifest.files).Count, $manifest.runtimeVersion)
 }
 catch {
     if ($null -ne $process) {

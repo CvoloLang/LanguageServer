@@ -74,6 +74,24 @@ if ($toolingVersion -notmatch '^\d+\.\d+\.\d+(\.\d+)?([\-+][0-9A-Za-z.\-]+)?$') 
     exit 1
 }
 
+# The compiler compatibility line this LanguageServer release advertises. It is a
+# separate, committed source of truth: it is not derived from the tooling version and
+# it is not part of the product version. It must exist and agree with the pinned
+# tooling bundle, which is checked in Test-CompatibilityAgreement.
+$compatLineFile = Join-Path $RepoRoot 'compiler-compatibility.version'
+$expectedCompilerLine = $null
+if (Test-Path -LiteralPath $compatLineFile) {
+    $expectedCompilerLine = (Get-Content -LiteralPath $compatLineFile -Raw).Trim()
+}
+if ([string]::IsNullOrWhiteSpace($expectedCompilerLine)) {
+    Write-Err "compiler-compatibility.version is missing or empty under $RepoRoot"
+    exit 1
+}
+if ($expectedCompilerLine -notmatch '^\d+\.\d+(\.\d+)*$') {
+    Write-Err "compiler-compatibility.version '$expectedCompilerLine' is not a well-formed compiler line"
+    exit 1
+}
+
 $artifactsDir = $ArtifactsRoot
 $toolingRoot = Join-Path $artifactsDir 'tooling'
 $bundleDir = Join-Path $toolingRoot $toolingVersion
@@ -173,6 +191,9 @@ function Test-CachedBundle {
             $script:CheckReason = 'tooling.manifest.json does not satisfy the producer contract'
             return $false
         }
+        if (-not (Test-CompatibilityAgreement $manifest)) {
+            return $false
+        }
     }
     catch {
         $script:CheckReason = "reading tooling.manifest.json threw: $($_.Exception.Message)"
@@ -181,11 +202,24 @@ function Test-CachedBundle {
     return (Test-Checksums $bundleDir $sha256SumsFile)
 }
 
-# Accept the compiler compatibility line. LSP-0 has no server-side policy yet:
-# any well-formed numeric line from the manifest is accepted; it is surfaced to
-# the build through the generated props so later increments can gate on it.
-function Test-Compatible([string]$line) {
-    return $line -match '^\d+\.\d+(\.\d+)*$'
+# The pinned tooling bundle and the committed compiler compatibility line must agree
+# exactly. Two independent facts are being cross-checked here:
+#   tooling.version                 -> ToolingVersion in the bundle that was actually downloaded
+#   compiler-compatibility.version  -> CompilerCompatibilityLine in that same bundle
+# A disagreement means the pin and the advertised compatibility have drifted apart.
+# Shipping that would advertise support for a compiler line the bundled tooling cannot
+# serve, so it is a hard failure rather than a warning. The check runs on the cache
+# reuse path and again on the fresh download path, before the build consumes anything.
+function Test-CompatibilityAgreement($manifest) {
+    if ([string]$manifest.ToolingVersion -ne $toolingVersion) {
+        $script:CheckReason = "tooling.manifest.json ToolingVersion '$($manifest.ToolingVersion)' does not match the tooling.version pin '$toolingVersion'"
+        return $false
+    }
+    if ([string]$manifest.CompilerCompatibilityLine -ne $expectedCompilerLine) {
+        $script:CheckReason = "compiler-compatibility.version '$expectedCompilerLine' does not match the pinned tooling's CompilerCompatibilityLine '$($manifest.CompilerCompatibilityLine)'"
+        return $false
+    }
+    return $true
 }
 
 # The producer manifest contract: version identity, compiler compatibility line,
@@ -207,6 +241,7 @@ function Write-Props($manifest) {
     $content = "<Project>`n  <PropertyGroup>`n" +
         "    <CvoloToolingVersion>$($manifest.ToolingVersion)</CvoloToolingVersion>`n" +
         "    <CvoloToolingDir>`$(MSBuildThisFileDirectory)tooling/$($manifest.ToolingVersion)</CvoloToolingDir>`n" +
+        "    <ToolingCommit>$($manifest.Commit)</ToolingCommit>`n" +
         "    <CompilerCompatLine>$($manifest.CompilerCompatibilityLine)</CompilerCompatLine>`n" +
         "  </PropertyGroup>`n</Project>`n"
     [System.IO.File]::WriteAllText($propsFile, $content, [System.Text.UTF8Encoding]::new($false))
@@ -344,6 +379,9 @@ try {
     $manifest = Get-Content -LiteralPath $tempManifest -Raw | ConvertFrom-Json
     if (-not (Test-ManifestFields $manifest)) {
         throw "Manifest does not satisfy the producer contract (ToolingVersion/CompilerCompatibilityLine/BuiltFromCompilerVersion/TargetFramework/RuntimeIdentifier/Commit)"
+    }
+    if (-not (Test-CompatibilityAgreement $manifest)) {
+        throw $script:CheckReason
     }
 }
 catch {
