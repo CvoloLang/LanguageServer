@@ -27,11 +27,15 @@
     Embed tooling metadata into the assembly so the runtime can report the
     tooling version and compiler compatibility line without touching the
     artifacts directory (for example when printing version info).
+
+    The tooling version is the exact revision pinned by tooling.version. The
+    compiler compatibility line is the single committed value from
+    compiler-compatibility.version, which the pinned tooling manifest must match.
   -->
   <Target Name="EmitToolingMetadata" BeforeTargets="GetAssemblyAttributes" Condition="'$(CvoloToolingVersion)' != ''">
     <ItemGroup>
       <AssemblyMetadata Include="ToolingVersion" Value="$(CvoloToolingVersion)" />
-      <AssemblyMetadata Include="CompilerCompatibilityLine" Value="$(CompilerCompatLine)" />
+      <AssemblyMetadata Include="CompilerCompatibilityLine" Value="$(CompilerCompatibilityLine)" />
     </ItemGroup>
   </Target>
 

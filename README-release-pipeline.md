@@ -11,16 +11,22 @@ This patch is based on the supplied LSP-2 repository snapshot:
 
 ## Trigger
 
-Set `Directory.Build.props` to the release version, for example:
+Set `Directory.Build.props` to the release version. The LanguageServer product
+version follows its own `0.1.0-alpha.N` series and is deliberately independent
+of the compiler line, for example:
 
 ```xml
-<Version>0.1.0-alpha.8</Version>
+<Version>0.1.0-alpha.9</Version>
 ```
 
-Commit, then create/push:
+Keep `tooling.version` and `compiler-compatibility.version` in step with the
+tooling bundle the release is built against. Those two files are compatibility
+metadata, not the product version.
+
+Commit, then create/push the matching tag:
 
 ```text
-v0.1.0-alpha.8
+v0.1.0-alpha.9
 ```
 
 `release.yml` requires the tag without its leading `v` to equal `<Version>`.

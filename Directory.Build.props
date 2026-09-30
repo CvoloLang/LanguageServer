@@ -1,6 +1,20 @@
 <Project>
+  <!--
+    Compiler compatibility line: the compiler line this LanguageServer release
+    supports. compiler-compatibility.version is the single committed source of
+    truth, so the value is read from that file rather than repeated as a literal.
+    The pinned tooling bundle in tooling.version carries the same line in its
+    tooling.manifest.json; the release pipeline fails when the two disagree.
+    The LanguageServer product version in <Version> below is deliberately
+    independent of both.
+  -->
   <PropertyGroup>
-    <Version>0.1.0-alpha.8</Version>
+    <CompilerCompatibilityLineFile>$(MSBuildThisFileDirectory)compiler-compatibility.version</CompilerCompatibilityLineFile>
+    <CompilerCompatibilityLine Condition="Exists('$(CompilerCompatibilityLineFile)')">$([System.IO.File]::ReadAllText('$(CompilerCompatibilityLineFile)').Trim())</CompilerCompatibilityLine>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <Version>0.1.0-alpha.9</Version>
     <TargetFramework>net10.0</TargetFramework>
     <RuntimeIdentifiers>win-x64;linux-x64;linux-arm64;osx-x64;osx-arm64</RuntimeIdentifiers>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -8,5 +22,15 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <RestoreLockedMode Condition="'$(ContinuousIntegrationBuild)' == 'true'">true</RestoreLockedMode>
+    <!--
+      Keep the product version exact. The build SHA is provenance, not part of the
+      product identity, so it is carried by the bundle manifest instead of being
+      appended to the informational version as "+<commit>".
+    -->
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
+
+  <Target Name="RequireCompilerCompatibilityLine" BeforeTargets="PrepareForBuild" Condition="'$(CompilerCompatibilityLine)' == ''">
+    <Error Text="compiler-compatibility.version is missing or empty. It must contain the compiler line this LanguageServer release supports, for example 0.0.21." />
+  </Target>
 </Project>
