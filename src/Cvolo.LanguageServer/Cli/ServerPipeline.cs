@@ -185,9 +185,36 @@ internal static class ServerPipeline
 
     public static void PrintVersion()
     {
-        Console.WriteLine($"{ServerMetadata.ServerName} {ServerMetadata.ServerVersion}");
-        Console.WriteLine($"tooling {ServerMetadata.ToolingVersion}");
-        Console.WriteLine($"compiler-line {ServerMetadata.CompilerCompatibilityLine}");
+        Console.WriteLine($"{ServerMetadata.ProductName} {ServerMetadata.ServerVersion}");
+        Console.WriteLine($"Commit: {ServerMetadata.LanguageServerCommit}");
+        Console.WriteLine($"Tooling: {ServerMetadata.ToolingVersion ?? ServerMetadata.Unknown}");
+        Console.WriteLine($"Compiler compatibility: {ServerMetadata.CompilerCompatibilityLine ?? ServerMetadata.Unknown}");
+    }
+
+    /// <summary>
+    /// Prints the same provenance as <see cref="PrintVersion"/> as a single JSON object
+    /// for scripts and by the release pipeline. The field names match
+    /// <c>bundle-manifest.json</c> exactly so the two can be compared field by field.
+    /// </summary>
+    public static void PrintVersionJson()
+    {
+        var identity = new
+        {
+            languageServerVersion = ServerMetadata.ServerVersion,
+            languageServerCommit = ServerMetadata.LanguageServerCommit,
+            toolingVersion = ServerMetadata.ToolingVersion,
+            toolingCommit = ServerMetadata.ToolingCommit,
+            compilerCompatibilityLine = ServerMetadata.CompilerCompatibilityLine,
+            rid = ServerMetadata.RuntimeIdentifier,
+            targetFramework = ServerMetadata.TargetFramework,
+            runtimeVersion = ServerMetadata.RuntimeVersion,
+        };
+
+        Console.WriteLine(JsonConvert.SerializeObject(identity, Formatting.None, new JsonSerializerSettings
+        {
+            NullValueHandling = NullValueHandling.Include,
+            ContractResolver = new DefaultContractResolver(),
+        }));
     }
 
     private static bool TryLoadTooling(ILspLogger logger)

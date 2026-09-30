@@ -102,21 +102,71 @@ public class ProcessLifecycleTests
     }
 
     [Fact]
-    public async Task VersionFlag_PrintsExactlyThreeLines_ExitsZero()
+    public async Task VersionFlag_PrintsExactlyFourLabelledLines_ExitsZero()
     {
         using var server = ServerProcess.Start("--version");
         var exitCode = await server.WaitForExitAsync().WithTimeout("server exit");
         Assert.Equal(0, exitCode);
 
+        var lines = await ReadVersionLinesAsync(server);
+
+        Assert.Equal(4, lines.Length);
+        Assert.Matches(@"^Cvolo Language Server \d+\.\d+\.\d+", lines[0]);
+        Assert.Matches(@"^Commit: [0-9a-f]{40}$", lines[1]);
+        Assert.Matches(@"^Tooling: \d+\.\d+\.\d+", lines[2]);
+        Assert.Matches(@"^Compiler compatibility: \d+\.\d+", lines[3]);
+
+        // The product version must be a clean SemVer with no build metadata, and must
+        // not be derived from the compiler line.
+        var productVersion = lines[0]["Cvolo Language Server ".Length..];
+        Assert.Matches(@"^\d+\.\d+\.\d+(-[0-9A-Za-z.\-]+)?$", productVersion);
+        var compilerLine = lines[3]["Compiler compatibility: ".Length..];
+        Assert.NotEqual(compilerLine, productVersion);
+    }
+
+    [Fact]
+    public async Task VersionFlagWithJson_PrintsOneMachineReadableObject_ExitsZero()
+    {
+        using var server = ServerProcess.Start("--version", "--json");
+        var exitCode = await server.WaitForExitAsync().WithTimeout("server exit");
+        Assert.Equal(0, exitCode);
+
+        var lines = await ReadVersionLinesAsync(server);
+        Assert.Single(lines);
+
+        using var document = System.Text.Json.JsonDocument.Parse(lines[0]);
+        var root = document.RootElement;
+
+        // The field names are deliberately the bundle-manifest.json field names, so a
+        // consumer can compare the two without translation.
+        foreach (var field in new[]
+                 {
+                     "languageServerVersion", "languageServerCommit", "toolingVersion", "toolingCommit",
+                     "compilerCompatibilityLine", "rid", "targetFramework", "runtimeVersion",
+                 })
+        {
+            Assert.True(root.TryGetProperty(field, out _), $"--version --json must report '{field}'");
+        }
+
+        Assert.Matches(@"^[0-9a-f]{40}$", root.GetProperty("languageServerCommit").GetString());
+        Assert.Matches(@"^\d+\.\d+\.\d+(\.\d+)?$", root.GetProperty("toolingVersion").GetString());
+        Assert.Matches(@"^\d+\.\d+", root.GetProperty("compilerCompatibilityLine").GetString());
+    }
+
+    [Fact]
+    public async Task JsonWithoutVersion_IsRejected_WithNonZeroExit()
+    {
+        using var server = ServerProcess.Start("--json");
+        var exitCode = await server.WaitForExitAsync().WithTimeout("server exit");
+        Assert.NotEqual(0, exitCode);
+    }
+
+    private static async Task<string[]> ReadVersionLinesAsync(ServerProcess server)
+    {
         var stdout = await server.WaitForStdoutStableAsync().WithTimeout("stdout drain");
-        var lines = System.Text.Encoding.UTF8
+        return System.Text.Encoding.UTF8
             .GetString(stdout)
             .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-        Assert.Equal(3, lines.Length);
-        Assert.Matches(@"^cvolo-language-server \d+\.\d+\.\d+", lines[0]);
-        Assert.Matches(@"^tooling \d+\.\d+\.\d+", lines[1]);
-        Assert.Matches(@"^compiler-line \d+\.\d+", lines[2]);
     }
 
     private static async Task RunFullLifecycleAsync(ServerProcess server)

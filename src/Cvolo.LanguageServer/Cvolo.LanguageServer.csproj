@@ -24,17 +24,48 @@
   </Target>
 
   <!--
-    Embed tooling metadata into the assembly so the runtime can report the
-    tooling version and compiler compatibility line without touching the
-    artifacts directory (for example when printing version info).
+    Embed the full build identity into the assembly so the runtime and the release
+    manifest can report exactly what was built, without ever reading the artifacts
+    directory or the working tree.
 
-    The tooling version is the exact revision pinned by tooling.version. The
-    compiler compatibility line is the single committed value from
+    The LanguageServer product version is NOT embedded here: it is the assembly
+    InformationalVersion, taken from <Version>. Because the product version must stay
+    a clean SemVer, IncludeSourceRevisionInInformationalVersion is disabled in
+    Directory.Build.props and provenance travels in its own fields instead.
+
+    LanguageServerCommit is supplied explicitly by the release pipeline
+    (-p:LanguageServerCommit=<sha>) after it has proved the checkout HEAD equals the
+    peeled release tag. A plain local build falls back to SourceRevisionId, and then to
+    "unknown"; the release manifest generator rejects a non-SHA value, so an
+    unprovenanced build can never be published.
+  -->
+  <Target Name="EmitBuildMetadata" BeforeTargets="GetAssemblyAttributes">
+    <PropertyGroup>
+      <_EffectiveLanguageServerCommit Condition="'$(LanguageServerCommit)' != ''">$(LanguageServerCommit)</_EffectiveLanguageServerCommit>
+      <_EffectiveLanguageServerCommit Condition="'$(_EffectiveLanguageServerCommit)' == '' and '$(SourceRevisionId)' != ''">$(SourceRevisionId)</_EffectiveLanguageServerCommit>
+      <_EffectiveLanguageServerCommit Condition="'$(_EffectiveLanguageServerCommit)' == ''">unknown</_EffectiveLanguageServerCommit>
+      <_EffectiveRuntimeVersion Condition="'$(BundledNETCoreAppPackageVersion)' != ''">$(BundledNETCoreAppPackageVersion)</_EffectiveRuntimeVersion>
+    </PropertyGroup>
+    <Warning Condition="'$(LanguageServerCommit)' == '' and '$(SourceRevisionId)' == ''"
+             Text="No LanguageServerCommit build property and no SourceRevisionId: the build provenance will be 'unknown'. Release builds pass -p:LanguageServerCommit explicitly." />
+    <ItemGroup>
+      <AssemblyMetadata Include="LanguageServerCommit" Value="$(_EffectiveLanguageServerCommit)" />
+      <AssemblyMetadata Include="TargetFramework" Value="$(TargetFramework)" />
+      <AssemblyMetadata Include="RuntimeIdentifier" Value="$(RuntimeIdentifier)" />
+      <AssemblyMetadata Include="RuntimeVersion" Value="$(_EffectiveRuntimeVersion)" />
+    </ItemGroup>
+  </Target>
+
+  <!--
+    Tooling metadata. The tooling version is the exact revision pinned by
+    tooling.version and tooling commit is the commit that tooling bundle was built
+    from; the compiler compatibility line is the single committed value from
     compiler-compatibility.version, which the pinned tooling manifest must match.
   -->
   <Target Name="EmitToolingMetadata" BeforeTargets="GetAssemblyAttributes" Condition="'$(CvoloToolingVersion)' != ''">
     <ItemGroup>
       <AssemblyMetadata Include="ToolingVersion" Value="$(CvoloToolingVersion)" />
+      <AssemblyMetadata Include="ToolingCommit" Value="$(ToolingCommit)" />
       <AssemblyMetadata Include="CompilerCompatibilityLine" Value="$(CompilerCompatibilityLine)" />
     </ItemGroup>
   </Target>

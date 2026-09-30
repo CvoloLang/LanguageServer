@@ -6,8 +6,10 @@ namespace Cvolo.LanguageServer.Cli;
 /// The <c>cvolo-language-server [options]</c> command line surface. Parsing is
 /// delegated to System.CommandLine so unknown options fail fast with a
 /// non-zero exit code before the JSON-RPC transport is started. The built-in
-/// <c>--version</c> option is removed so the server can print its three-line
-/// version banner instead of the single-line assembly version.
+/// <c>--version</c> option is removed so the server can print its own version
+/// banner: <c>--version</c> prints a four-line human summary and
+/// <c>--version --json</c> prints the same provenance as one JSON object for
+/// scripts. <c>--verbose</c> remains a logging switch and is unrelated to either.
 /// </summary>
 internal sealed class CvoloLanguageServerRootCommand : RootCommand
 {
@@ -31,6 +33,11 @@ internal sealed class CvoloLanguageServerRootCommand : RootCommand
         Description = "Print version information and exit without starting the server.",
     };
 
+    private readonly Option<bool> _jsonOption = new("--json")
+    {
+        Description = "With --version, print the same provenance as one JSON object for scripts.",
+    };
+
     public CvoloLanguageServerRootCommand() : base("Language Server Protocol (LSP 3.17) server for the Cvolo language.")
     {
         Options.Remove(Options.First(o => o is VersionOption or { Name: "--version" }));
@@ -39,6 +46,7 @@ internal sealed class CvoloLanguageServerRootCommand : RootCommand
         Add(_logOption);
         Add(_verboseOption);
         Add(_versionOption);
+        Add(_jsonOption);
 
         SetAction(HandleAsync);
     }
@@ -47,9 +55,28 @@ internal sealed class CvoloLanguageServerRootCommand : RootCommand
     {
         try
         {
-            if (parseResult.Tokens.Any(token => token.Value == _versionOption.Name))
+            var versionRequested = parseResult.Tokens.Any(token => token.Value == _versionOption.Name);
+            var jsonRequested = parseResult.GetValue(_jsonOption);
+
+            if (jsonRequested && !versionRequested)
             {
-                ServerPipeline.PrintVersion();
+                // --json only shapes --version output; on its own it is a usage error
+                // rather than a silent request to start the server.
+                Console.Error.WriteLine($"{ServerMetadata.ServerName}: --json is only valid together with --version.");
+                return 2;
+            }
+
+            if (versionRequested)
+            {
+                if (jsonRequested)
+                {
+                    ServerPipeline.PrintVersionJson();
+                }
+                else
+                {
+                    ServerPipeline.PrintVersion();
+                }
+
                 return 0;
             }
 
