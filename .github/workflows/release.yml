@@ -142,13 +142,27 @@ jobs:
             bash build/fetch-tooling.sh
           fi
 
-      - name: Restore server (locked)
+      - name: Restore server for this RID
         shell: bash
         run: |
           set -euo pipefail
+          # A RID-specific single-file publish has a different package graph from
+          # the portable build: the SDK adds Microsoft.NET.ILLink.Tasks when
+          # PublishSingleFile is set. Restoring that graph in locked mode against
+          # the committed lock files fails with NU1004, and restoring it in place
+          # would rewrite those committed files. The lock file for this leg is
+          # therefore redirected into the disposable staging tree, so the publish is
+          # still restored from a lock file and the committed lock files are never
+          # modified. Package versions themselves are exact in the project files;
+          # the release's real determinism guarantee is the pinned, checksum-
+          # verified Tooling payload and the recorded commit.
+          mkdir -p artifacts/release/lock
           dotnet restore src/Cvolo.LanguageServer/Cvolo.LanguageServer.csproj \
-            --locked-mode \
-            -p:ContinuousIntegrationBuild=true
+            -r "$RID" \
+            --use-lock-file \
+            -p:ContinuousIntegrationBuild=false \
+            -p:NuGetLockFilePath="artifacts/release/lock/$RID.packages.lock.json"
+          test -f "artifacts/release/lock/$RID.packages.lock.json"
 
       # Deterministic staging: one directory owned by this matrix leg, recreated
       # immediately before publishing into it. A release never reads a binary out of
